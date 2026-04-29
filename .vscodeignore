@@ -1,0 +1,15 @@
+.vscode/**
+.vscode-test/**
+webview-ui/src/**
+webview-ui/node_modules/**
+webview-ui/vite.config.ts
+webview-ui/tsconfig.json
+webview-ui/svelte.config.js
+webview-ui/index.html
+src/**
+out/**
+node_modules/**
+.gitignore
+webpack.config.js
+tsconfig.json
+CHANGELOG.md

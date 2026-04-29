@@ -1,0 +1,7 @@
+.git/
+node_modules/
+out/
+dist/
+webview-ui/node_modules/
+webview-ui/dist/
+*.vsix

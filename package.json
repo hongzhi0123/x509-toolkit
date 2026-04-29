@@ -1,0 +1,68 @@
+{
+  "name": "x509-viewer",
+  "displayName": "X.509 Certificate Viewer",
+  "description": "View and analyze X.509 certificates with a rich Svelte-powered web UI. Supports PEM from editor selection and DER/PEM binary files.",
+  "version": "0.1.0",
+  "publisher": "x509viewer",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["x509", "certificate", "pem", "der", "ssl", "tls", "pkix"],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "x509viewer.showFromSelection",
+        "title": "X.509 Viewer: Show Certificate from Selection",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "x509viewer.openFile",
+        "title": "X.509 Viewer: Open Certificate File",
+        "icon": "$(file-binary)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "x509viewer.showFromSelection",
+          "when": "editorTextFocus && editorHasSelection",
+          "group": "1_modification@100"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "x509viewer.showFromSelection",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "x509viewer.openFile"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:webview && npm run build:ext",
+    "build:ext": "webpack --mode production",
+    "build:webview": "cd webview-ui && npm install && npm run build",
+    "watch:ext": "webpack --mode development --watch",
+    "watch:webview": "cd webview-ui && npm run dev",
+    "compile": "tsc -p ./",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@peculiar/webcrypto": "^1.4.5",
+    "@peculiar/x509": "^1.9.7"
+  }
+}
