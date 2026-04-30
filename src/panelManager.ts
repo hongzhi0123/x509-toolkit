@@ -91,6 +91,33 @@ export function getOrCreatePanel(
             };
             panel.webview.postMessage(reply);
           });
+      } else if (msg.type === 'exportCert') {
+        const { pem, suggestedName } = msg;
+        vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(suggestedName),
+          filters: {
+            'PEM Certificate': ['pem', 'crt', 'cer'],
+            'DER Certificate': ['der', 'cer'],
+          },
+          saveLabel: 'Export Certificate',
+          title: 'Export Certificate',
+        }).then(uri => {
+          if (!uri) return;
+          const ext = uri.fsPath.split('.').pop()?.toLowerCase() ?? 'pem';
+          let data: Buffer;
+          if (ext === 'der') {
+            // Strip PEM headers and decode base64 to binary DER
+            const b64 = pem
+              .replace(/-----BEGIN CERTIFICATE-----/g, '')
+              .replace(/-----END CERTIFICATE-----/g, '')
+              .replace(/\s+/g, '');
+            data = Buffer.from(b64, 'base64');
+          } else {
+            data = Buffer.from(pem, 'utf8');
+          }
+          require('fs').writeFileSync(uri.fsPath, data);
+          vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
+        });
       }
     },
     undefined,

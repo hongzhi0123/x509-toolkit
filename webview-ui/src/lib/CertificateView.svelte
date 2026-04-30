@@ -12,10 +12,16 @@
   export let loadingUrls: Set<string> = new Set();
   export let topOffset = 0;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
+  }
+
+  function exportCert(): void {
+    const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
+    const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    dispatch('export', { pem: cert.raw, suggestedName: `${safeName}.pem` });
   }
 
   function formatDate(iso: string): string {
@@ -74,7 +80,12 @@
         </div>
       </div>
     </div>
-    <ValidityIndicator validity={cert.validity} />
+    <div class="cert-header-right">
+      <ValidityIndicator validity={cert.validity} />
+      <button class="export-btn" title="Export certificate" on:click={exportCert}>
+        ⤓ Export
+      </button>
+    </div>
   </header>
 
   <!-- ── Quick-look summary bar ── -->
@@ -225,6 +236,33 @@
     background: var(--vscode-sideBar-background, #181825);
     border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
     flex-wrap: wrap;
+  }
+
+  .cert-header-right {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.28rem 0.7rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .export-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+    border-color: var(--vscode-focusBorder, rgba(255,255,255,0.3));
   }
 
   .cert-header-left {

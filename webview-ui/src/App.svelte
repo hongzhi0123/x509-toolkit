@@ -75,6 +75,10 @@
     vscode.postMessage({ type: 'copyToClipboard', value: event.detail });
   }
 
+  function handleExportCert(event: CustomEvent<{ pem: string; suggestedName: string }>): void {
+    vscode.postMessage({ type: 'exportCert', ...event.detail });
+  }
+
   function handleLoadCaIssuer(event: CustomEvent<string>): void {
     const url = event.detail;
     if (loadingUrls.has(url) || downloadedCerts.some(d => d.url === url)) return;
@@ -150,6 +154,7 @@
       {loadingUrls}
       topOffset={chainNavHeight}
       on:copy={handleCopyRequest}
+      on:export={handleExportCert}
       on:loadCaIssuer={handleLoadCaIssuer}
     />
   {/if}
