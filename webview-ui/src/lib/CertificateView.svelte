@@ -9,8 +9,9 @@
   import Fingerprints from './Fingerprints.svelte';
 
   export let cert: CertificateData;
+  export let loadingUrls: Set<string> = new Set();
 
-  const dispatch = createEventDispatcher<{ copy: string }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -167,7 +168,12 @@
     <!-- Extensions -->
     {#if cert.extensions.length > 0}
       <SectionCard title="Extensions ({cert.extensions.length})" icon="🧩">
-        <ExtensionsList extensions={cert.extensions} on:copy={(e) => copy(e.detail)} />
+        <ExtensionsList
+          extensions={cert.extensions}
+          {loadingUrls}
+          on:copy={(e) => copy(e.detail)}
+          on:loadCaIssuer={(e) => dispatch('loadCaIssuer', e.detail)}
+        />
       </SectionCard>
     {/if}
 

@@ -3,8 +3,9 @@
   import type { CertExtension } from '../types';
 
   export let extensions: CertExtension[];
+  export let loadingUrls: Set<string> = new Set();
 
-  const dispatch = createEventDispatcher<{ copy: string }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string }>();
 
   let expanded: Set<number> = new Set();
 
@@ -41,6 +42,28 @@
                 <button class="copy-btn" on:click={() => dispatch('copy', ext.value)}>⧉ Copy</button>
               </div>
               <pre class="ext-val">{ext.value}</pre>
+            </div>
+          {/if}
+
+          {#if ext.caIssuerUrls && ext.caIssuerUrls.length > 0}
+            <div class="ext-field">
+              <span class="ext-flbl">CA Issuer Certificates</span>
+              {#each ext.caIssuerUrls as url}
+                <div class="ca-issuer-row">
+                  <span class="ca-issuer-url" title={url}>{url}</span>
+                  <button
+                    class="load-ca-btn"
+                    disabled={loadingUrls.has(url)}
+                    on:click={() => dispatch('loadCaIssuer', url)}
+                  >
+                    {#if loadingUrls.has(url)}
+                      <span class="load-spinner"></span> Loading…
+                    {:else}
+                      ↓ Load
+                    {/if}
+                  </button>
+                </div>
+              {/each}
             </div>
           {/if}
 
@@ -171,4 +194,52 @@
     max-height: 180px;
     overflow-y: auto;
   }
+
+  /* ─── CA Issuer download rows ─── */
+  .ca-issuer-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+  }
+
+  .ca-issuer-url {
+    flex: 1;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.7rem;
+    color: var(--vscode-textLink-foreground, #89b4fa);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .load-ca-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    background: var(--vscode-button-background, #7c3aed);
+    color: var(--vscode-button-foreground, #fff);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: opacity 0.12s;
+  }
+  .load-ca-btn:hover:not(:disabled) { opacity: 0.85; }
+  .load-ca-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .load-spinner {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

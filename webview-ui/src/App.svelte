@@ -19,7 +19,12 @@
   let activeIndex = 0;
   let errorMessage = '';
 
-  $: activeCert = chain[activeIndex] ?? null;
+  // Downloaded CA Issuer certificates (appended as extra tabs)
+  let downloadedCerts: Array<{ url: string; cert: CertificateData }> = [];
+  let loadingUrls: Set<string> = new Set();
+
+  $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
+  $: activeCert = displayChain[activeIndex] ?? null;
 
   onMount(() => {
     window.addEventListener('message', (event: MessageEvent<ExtToWebviewMsg>) => {
@@ -28,17 +33,37 @@
         case 'loading':
           state = 'loading';
           chain = [];
+          downloadedCerts = [];
+          loadingUrls = new Set();
           errorMessage = '';
           break;
         case 'certificate':
           chain = msg.chain;
           activeIndex = msg.activeIndex;
+          downloadedCerts = [];
+          loadingUrls = new Set();
           state = 'ready';
           break;
         case 'error':
           errorMessage = msg.message;
           state = 'error';
           break;
+        case 'caIssuerCert': {
+          loadingUrls.delete(msg.url);
+          loadingUrls = loadingUrls;
+          if (!downloadedCerts.some(d => d.url === msg.url)) {
+            downloadedCerts = [...downloadedCerts, { url: msg.url, cert: msg.cert }];
+            // Switch to the newly added tab
+            activeIndex = chain.length + downloadedCerts.length - 1;
+          }
+          break;
+        }
+        case 'caIssuerError': {
+          loadingUrls.delete(msg.url);
+          loadingUrls = loadingUrls;
+          errorMessage = `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
+          break;
+        }
       }
     });
 
@@ -49,9 +74,19 @@
     vscode.postMessage({ type: 'copyToClipboard', value: event.detail });
   }
 
+  function handleLoadCaIssuer(event: CustomEvent<string>): void {
+    const url = event.detail;
+    if (loadingUrls.has(url) || downloadedCerts.some(d => d.url === url)) return;
+    loadingUrls.add(url);
+    loadingUrls = loadingUrls;
+    vscode.postMessage({ type: 'downloadCaIssuer', url });
+  }
+
   function selectCert(index: number): void {
     activeIndex = index;
-    vscode.postMessage({ type: 'selectCert', index });
+    if (index < chain.length) {
+      vscode.postMessage({ type: 'selectCert', index });
+    }
   }
 </script>
 
@@ -81,9 +116,15 @@
     </div>
 
   {:else if state === 'ready' && activeCert}
-    {#if chain.length > 1}
+    {#if errorMessage}
+      <div class="ca-issuer-error">
+        <span>⚠️ {errorMessage}</span>
+        <button class="dismiss-btn" on:click={() => errorMessage = ''}>✕</button>
+      </div>
+    {/if}
+    {#if displayChain.length > 1}
       <nav class="chain-nav" aria-label="Certificate chain">
-        {#each chain as cert, i}
+        {#each displayChain as cert, i}
           <button
             class="chain-tab"
             class:active={i === activeIndex}
@@ -92,7 +133,9 @@
           >
             <span class="chain-index">{i + 1}</span>
             <span class="chain-cn">{cert.subject.commonName ?? cert.subject.raw}</span>
-            {#if cert.isCA}
+            {#if i >= chain.length}
+              <span class="badge badge-downloaded">↓ CA</span>
+            {:else if cert.isCA}
               <span class="badge badge-ca">CA</span>
             {:else}
               <span class="badge badge-ee">EE</span>
@@ -101,7 +144,12 @@
         {/each}
       </nav>
     {/if}
-    <CertificateView cert={activeCert} on:copy={handleCopyRequest} />
+    <CertificateView
+      cert={activeCert}
+      {loadingUrls}
+      on:copy={handleCopyRequest}
+      on:loadCaIssuer={handleLoadCaIssuer}
+    />
   {/if}
 </main>
 
@@ -256,4 +304,35 @@
     color: #89dceb;
     border: 1px solid rgba(137,220,235,0.3);
   }
+
+  .badge-downloaded {
+    background: rgba(166,227,161,0.15);
+    color: #a6e3a1;
+    border: 1px solid rgba(166,227,161,0.35);
+  }
+
+  /* ─── CA Issuer error banner ─── */
+  .ca-issuer-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem;
+    background: rgba(243,139,168,0.08);
+    border-bottom: 1px solid rgba(243,139,168,0.25);
+    color: var(--vscode-errorForeground, #f38ba8);
+    font-size: 0.8rem;
+  }
+
+  .dismiss-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font-size: 0.9rem;
+    padding: 0 0.25rem;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .dismiss-btn:hover { opacity: 1; }
 </style>

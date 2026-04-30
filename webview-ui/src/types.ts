@@ -38,6 +38,8 @@ export interface CertExtension {
   critical: boolean;
   value: string;
   raw: string;
+  /** CA Issuer URLs from the Authority Information Access extension */
+  caIssuerUrls?: string[];
 }
 
 export interface Fingerprints {
@@ -63,9 +65,12 @@ export interface CertificateData {
 export type ExtToWebviewMsg =
   | { type: 'loading' }
   | { type: 'certificate'; chain: CertificateData[]; activeIndex: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'caIssuerCert'; cert: CertificateData; url: string }
+  | { type: 'caIssuerError'; url: string; message: string };
 
 export type WebviewToExtMsg =
   | { type: 'ready' }
   | { type: 'copyToClipboard'; value: string }
-  | { type: 'selectCert'; index: number };
+  | { type: 'selectCert'; index: number }
+  | { type: 'downloadCaIssuer'; url: string };

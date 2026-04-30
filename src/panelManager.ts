@@ -1,7 +1,52 @@
 import * as vscode from 'vscode';
+import * as https from 'https';
+import * as http from 'http';
+import { parseCertificate } from './certificateParser';
 import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
+
+// ------------------------------------------------------------------
+// CA Issuer download helper
+// ------------------------------------------------------------------
+
+function downloadBytesFromUrl(url: string, redirectsLeft = 3): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try { parsed = new URL(url); } catch { reject(new Error('Invalid URL')); return; }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      reject(new Error('Only http:// and https:// URLs are supported'));
+      return;
+    }
+
+    const requester = parsed.protocol === 'https:' ? https : http;
+    const req = requester.get(url, { timeout: 10_000 }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (redirectsLeft <= 0) { reject(new Error('Too many redirects')); return; }
+        const next = new URL(res.headers.location, url).toString();
+        resolve(downloadBytesFromUrl(next, redirectsLeft - 1));
+        return;
+      }
+      if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        return;
+      }
+      const MAX_BYTES = 512 * 1024;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BYTES) { req.destroy(); reject(new Error('Response too large (>512 KB)')); return; }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+  });
+}
 
 export function getOrCreatePanel(
   extensionUri: vscode.Uri,
@@ -30,6 +75,22 @@ export function getOrCreatePanel(
       if (msg.type === 'copyToClipboard') {
         vscode.env.clipboard.writeText(msg.value);
         vscode.window.showInformationMessage('Copied to clipboard.');
+      } else if (msg.type === 'downloadCaIssuer') {
+        const { url } = msg;
+        downloadBytesFromUrl(url)
+          .then(buf => parseCertificate(buf))
+          .then(cert => {
+            const reply: ExtToWebviewMsg = { type: 'caIssuerCert', cert, url };
+            panel.webview.postMessage(reply);
+          })
+          .catch((err: unknown) => {
+            const reply: ExtToWebviewMsg = {
+              type: 'caIssuerError',
+              url,
+              message: (err as Error).message ?? String(err),
+            };
+            panel.webview.postMessage(reply);
+          });
       }
     },
     undefined,

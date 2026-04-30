@@ -220,6 +220,9 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
             for (const n of aia.ocsp)      parts.push(`OCSP: ${n.value}`);
             for (const n of aia.caIssuers) parts.push(`CA Issuers: ${n.value}`);
             item.value = parts.join('\n');
+            item.caIssuerUrls = aia.caIssuers
+              .map(n => String(n.value))
+              .filter(u => u.startsWith('http://') || u.startsWith('https://'));
           }
           break;
         }
