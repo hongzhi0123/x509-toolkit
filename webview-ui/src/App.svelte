@@ -22,6 +22,7 @@
   // Downloaded CA Issuer certificates (appended as extra tabs)
   let downloadedCerts: Array<{ url: string; cert: CertificateData }> = [];
   let loadingUrls: Set<string> = new Set();
+  let chainNavHeight = 0;
 
   $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
   $: activeCert = displayChain[activeIndex] ?? null;
@@ -123,7 +124,7 @@
       </div>
     {/if}
     {#if displayChain.length > 1}
-      <nav class="chain-nav" aria-label="Certificate chain">
+      <nav class="chain-nav" aria-label="Certificate chain" bind:clientHeight={chainNavHeight}>
         {#each displayChain as cert, i}
           <button
             class="chain-tab"
@@ -147,6 +148,7 @@
     <CertificateView
       cert={activeCert}
       {loadingUrls}
+      topOffset={chainNavHeight}
       on:copy={handleCopyRequest}
       on:loadCaIssuer={handleLoadCaIssuer}
     />
@@ -235,6 +237,9 @@
     background: var(--vscode-sideBar-background, #181825);
     border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
     gap: 2px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
   }
 
   .chain-tab {

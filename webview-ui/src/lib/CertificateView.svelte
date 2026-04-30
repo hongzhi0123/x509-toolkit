@@ -10,6 +10,7 @@
 
   export let cert: CertificateData;
   export let loadingUrls: Set<string> = new Set();
+  export let topOffset = 0;
 
   const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string }>();
 
@@ -50,6 +51,9 @@
 </script>
 
 <div class="cert-view">
+
+  <!-- ── Sticky top: header + summary bar ── -->
+  <div class="sticky-top" style="top: {topOffset}px">
 
   <!-- ── Hero header ── -->
   <header class="cert-header">
@@ -113,6 +117,8 @@
       </span>
     </div>
   </div>
+
+  </div><!-- /.sticky-top -->
 
   <!-- ── Sections ── -->
   <div class="sections">
@@ -199,6 +205,14 @@
   .cert-view {
     display: flex;
     flex-direction: column;
+  }
+
+  /* ── Sticky header wrapper ── */
+  .sticky-top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--vscode-sideBar-background, #181825);
   }
 
   /* ── Header ── */
