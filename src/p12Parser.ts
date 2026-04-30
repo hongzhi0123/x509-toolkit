@@ -146,6 +146,25 @@ export function createP12Buffer(pemCerts: string[], password: string, privateKey
   const unsorted = pemCerts.map(pem => forge.pki.certificateFromPem(pem));
   const certs = sortCertChain(unsorted);
   const key = privateKeyBuf ? loadPrivateKeyFromBuffer(privateKeyBuf) as forge.pki.rsa.PrivateKey : null;
+
+  if (key !== null) {
+    // Verify the private key corresponds to the EE certificate's public key.
+    // For RSA: reconstruct the public key from the private key's modulus (n) and
+    // public exponent (e), then compare PEM representations.
+    // Non-RSA key types (EC, etc.) are skipped — forge's PKCS#12 support is RSA-focused.
+    try {
+      const rsaKey = key as forge.pki.rsa.PrivateKey;
+      const certPub = certs[0].publicKey as forge.pki.rsa.PublicKey;
+      const derivedPub = forge.pki.rsa.setPublicKey(rsaKey.n, rsaKey.e);
+      if (forge.pki.publicKeyToPem(derivedPub) !== forge.pki.publicKeyToPem(certPub)) {
+        throw new Error('The private key does not match the public key in the certificate.');
+      }
+    } catch (e) {
+      // Re-throw our own mismatch error; swallow type errors for non-RSA keys.
+      if ((e as Error).message.includes('does not match')) { throw e; }
+    }
+  }
+
   const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
     key,
     certs,
