@@ -51,19 +51,44 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
 }
 
 /**
- * Create a certificates-only PKCS#12 buffer from PEM-encoded certificates.
- * No private key is included. The first PEM should be the end-entity certificate;
- * the rest are CA chain certificates.
- *
- * @param pemCerts  Array of PEM strings (EE cert first, then CAs)
- * @param password  Password to protect the archive (may be empty)
+ * Load a private key from a Buffer that is either PEM text or DER binary.
+ * Tries PKCS#8 (unencrypted) first, then falls back to PKCS#1 RSA.
  */
-export function createP12Buffer(pemCerts: string[], password: string): Buffer {
+function loadPrivateKeyFromBuffer(buf: Buffer): forge.pki.PrivateKey {
+  const text = buf.toString('utf8').trim();
+  if (text.startsWith('-----BEGIN')) {
+    return forge.pki.privateKeyFromPem(text);
+  }
+  // DER binary — wrap as PEM and try PKCS#8 then PKCS#1
+  const b64 = buf.toString('base64');
+  const lines = (header: string, footer: string) =>
+    `${header}\n${b64.match(/.{1,64}/g)!.join('\n')}\n${footer}`;
+  try {
+    return forge.pki.privateKeyFromPem(
+      lines('-----BEGIN PRIVATE KEY-----', '-----END PRIVATE KEY-----')
+    );
+  } catch {
+    return forge.pki.privateKeyFromPem(
+      lines('-----BEGIN RSA PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----')
+    );
+  }
+}
+
+/**
+ * Create a PKCS#12 buffer from PEM-encoded certificates and an optional private key.
+ * When no key is supplied the P12 is certificates-only and password is ignored.
+ *
+ * @param pemCerts     Array of PEM strings (EE cert first, then CAs)
+ * @param password     Password to protect the private key (ignored when no key)
+ * @param privateKeyBuf  Raw buffer of a PEM or DER-encoded private key (optional)
+ */
+export function createP12Buffer(pemCerts: string[], password: string, privateKeyBuf?: Buffer): Buffer {
   const certs = pemCerts.map(pem => forge.pki.certificateFromPem(pem));
+  const key = privateKeyBuf ? loadPrivateKeyFromBuffer(privateKeyBuf) as forge.pki.rsa.PrivateKey : null;
   const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
-    null,   // no private key
+    key,
     certs,
-    password,
+    key ? password : '',
     { algorithm: '3des' }
   );
   const derStr = forge.asn1.toDer(p12Asn1).getBytes();

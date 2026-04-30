@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import { parseCertificate } from './certificateParser';
@@ -72,7 +73,7 @@ export function getOrCreatePanel(
   panel.webview.html = buildHtml(panel.webview, extensionUri);
 
   panel.webview.onDidReceiveMessage(
-    (msg: WebviewToExtMsg) => {
+    async (msg: WebviewToExtMsg) => {
       if (msg.type === 'copyToClipboard') {
         vscode.env.clipboard.writeText(msg.value);
         vscode.window.showInformationMessage('Copied to clipboard.');
@@ -116,36 +117,57 @@ export function getOrCreatePanel(
           } else {
             data = Buffer.from(pem, 'utf8');
           }
-          require('fs').writeFileSync(uri.fsPath, data);
+          fs.writeFileSync(uri.fsPath, data);
           vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
         });
       } else if (msg.type === 'createP12') {
         const { certPems, suggestedName } = msg;
-        vscode.window.showInputBox({
-          title: 'Set P12 Password',
-          prompt: 'Enter a password to protect the P12 file (leave empty for no password)',
-          password: true,
-          ignoreFocusOut: true,
-        }).then(password => {
-          if (password === undefined) return; // user cancelled
-          let p12Buf: Buffer;
-          try {
-            p12Buf = createP12Buffer(certPems, password);
-          } catch (err) {
-            vscode.window.showErrorMessage(`Failed to create P12: ${(err as Error).message}`);
-            return;
-          }
-          vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(suggestedName),
-            filters: { 'PKCS#12 / PFX': ['p12', 'pfx'] },
-            saveLabel: 'Create P12',
-            title: 'Save P12 File',
-          }).then(uri => {
-            if (!uri) return;
-            require('fs').writeFileSync(uri.fsPath, p12Buf);
-            vscode.window.showInformationMessage(`P12 saved to ${uri.fsPath}`);
-          });
+
+        // Step 1 — optionally pick a private key file (cancel = certs-only)
+        const keyUris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Include Key',
+          title: 'Select Private Key File — Cancel to create a certs-only P12',
+          filters: {
+            'Private Key': ['pem', 'key', 'der', 'pk8'],
+            'All Files': ['*'],
+          },
         });
+        const keyBuf = keyUris?.[0] ? fs.readFileSync(keyUris[0].fsPath) : undefined;
+
+        // Step 2 — ask for password only when a key is included
+        let password = '';
+        if (keyBuf) {
+          const input = await vscode.window.showInputBox({
+            title: 'Set P12 Password',
+            prompt: 'Enter a password to protect the private key (leave empty for no password)',
+            password: true,
+            ignoreFocusOut: true,
+          });
+          if (input === undefined) return; // user cancelled
+          password = input;
+        }
+
+        // Step 3 — build the P12
+        let p12Buf: Buffer;
+        try {
+          p12Buf = createP12Buffer(certPems, password, keyBuf);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to create P12: ${(err as Error).message}`);
+          return;
+        }
+
+        // Step 4 — save dialog
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(suggestedName),
+          filters: { 'PKCS#12 / PFX': ['p12', 'pfx'] },
+          saveLabel: 'Save P12',
+          title: 'Save P12 File',
+        });
+        if (!saveUri) return;
+        fs.writeFileSync(saveUri.fsPath, p12Buf);
+        const note = keyBuf ? ' (with private key)' : ' (certificates only)';
+        vscode.window.showInformationMessage(`P12 saved to ${saveUri.fsPath}${note}`);
       }
     },
     undefined,
