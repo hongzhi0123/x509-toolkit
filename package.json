@@ -37,6 +37,11 @@
         "command": "x509viewer.openP12",
         "title": "X.509 Viewer: Open P12 / PFX File",
         "icon": "$(file-binary)"
+      },
+      {
+        "command": "x509viewer.createSelfSignedP12",
+        "title": "X.509 Viewer: Create Self-Signed P12",
+        "icon": "$(key)"
       }
     ],
     "menus": {
@@ -57,6 +62,9 @@
         },
         {
           "command": "x509viewer.openP12"
+        },
+        {
+          "command": "x509viewer.createSelfSignedP12"
         }
       ]
     }

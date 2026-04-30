@@ -170,3 +170,59 @@ export function createP12Buffer(pemCerts: string[], password: string, privateKey
   const derStr = forge.asn1.toDer(p12Asn1).getBytes();
   return Buffer.from(derStr, 'binary');
 }
+
+/**
+ * Generate a self-signed RSA-2048 certificate and return it as a PKCS#12 buffer.
+ * The cert includes digital-signature / key-encipherment key usages and
+ * TLS server+client extended key usages so it is immediately useful for testing.
+ *
+ * @param commonName   CN for subject and issuer
+ * @param validityDays Number of days from now the cert should be valid
+ * @param password     Password to protect the P12 (empty string = no password)
+ */
+export function createSelfSignedP12(
+  commonName: string,
+  validityDays: number,
+  password: string,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    // Generate RSA-2048 key pair asynchronously (chunked via setImmediate in Node.js)
+    forge.pki.rsa.generateKeyPair({ bits: 2048, workers: -1 }, (err, keyPair) => {
+      if (err) { reject(err); return; }
+      try {
+        const cert = forge.pki.createCertificate();
+        cert.publicKey = keyPair.publicKey;
+        // Random 128-bit serial number
+        cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
+
+        const now = new Date();
+        cert.validity.notBefore = now;
+        cert.validity.notAfter = new Date(now.getTime() + validityDays * 86_400_000);
+
+        const attrs = [{ name: 'commonName', value: commonName }];
+        cert.setSubject(attrs);
+        cert.setIssuer(attrs); // self-signed
+
+        cert.setExtensions([
+          { name: 'basicConstraints', cA: false, critical: true },
+          { name: 'keyUsage', critical: true,
+            digitalSignature: true, keyEncipherment: true, dataEncipherment: true },
+          { name: 'extKeyUsage', serverAuth: true, clientAuth: true },
+          { name: 'subjectKeyIdentifier' },
+        ]);
+
+        cert.sign(keyPair.privateKey, forge.md.sha256.create());
+
+        const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
+          keyPair.privateKey,
+          [cert],
+          password,
+          { algorithm: '3des' },
+        );
+        resolve(Buffer.from(forge.asn1.toDer(p12Asn1).getBytes(), 'binary'));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}

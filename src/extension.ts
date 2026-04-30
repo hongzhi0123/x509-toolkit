@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { parseCertificate, parsePEMChain } from './certificateParser';
-import { parseP12 } from './p12Parser';
+import { parseP12, createSelfSignedP12 } from './p12Parser';
 import {
   getOrCreatePanel,
   sendLoading,
@@ -128,6 +128,69 @@ export function activate(context: vscode.ExtensionContext): void {
       } catch (err: unknown) {
         sendError(panel, (err as Error).message ?? String(err));
       }
+    })
+  );
+
+  // Command: generate a sample self-signed P12
+  context.subscriptions.push(
+    vscode.commands.registerCommand('x509viewer.createSelfSignedP12', async () => {
+      const cn = await vscode.window.showInputBox({
+        title: 'Create Self-Signed P12 — Common Name',
+        prompt: 'Common Name (CN) for the certificate',
+        value: 'Self-Signed',
+        ignoreFocusOut: true,
+        validateInput: v => v.trim() ? null : 'Common Name cannot be empty',
+      });
+      if (cn === undefined) return;
+
+      const daysStr = await vscode.window.showInputBox({
+        title: 'Create Self-Signed P12 — Validity',
+        prompt: 'Validity period in days',
+        value: '365',
+        ignoreFocusOut: true,
+        validateInput: v => /^\d+$/.test(v) && +v > 0 ? null : 'Enter a positive integer',
+      });
+      if (daysStr === undefined) return;
+
+      const password = await vscode.window.showInputBox({
+        title: 'Create Self-Signed P12 — Password',
+        prompt: 'Password to protect the P12 (leave empty for no password)',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (password === undefined) return;
+
+      let p12Buf: Buffer;
+      try {
+        p12Buf = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Generating self-signed certificate…', cancellable: false },
+          () => createSelfSignedP12(cn.trim(), parseInt(daysStr, 10), password),
+        );
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Failed to generate certificate: ${(err as Error).message ?? String(err)}`);
+        return;
+      }
+
+      const safeName = cn.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+      const saveUri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${safeName}.p12`),
+        filters: { 'PKCS#12 Files': ['p12', 'pfx'], 'All Files': ['*'] },
+      });
+      if (!saveUri) return;
+
+      fs.writeFileSync(saveUri.fsPath, p12Buf);
+
+      // Immediately open and display the generated cert in the viewer
+      const panel = getOrCreatePanel(context.extensionUri, context);
+      sendLoading(panel);
+      try {
+        const certs = await parseP12(p12Buf, password);
+        sendCertificates(panel, certs, 0);
+      } catch (err: unknown) {
+        sendError(panel, (err as Error).message ?? String(err));
+      }
+
+      vscode.window.showInformationMessage(`Self-signed P12 saved to ${saveUri.fsPath}`);
     })
   );
 }
