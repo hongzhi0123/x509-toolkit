@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as forge from 'node-forge';
 import { parseCertificate } from './certificateParser';
 import type { CertificateData } from './types';
@@ -149,19 +150,14 @@ export function createP12Buffer(pemCerts: string[], password: string, privateKey
 
   if (key !== null) {
     // Verify the private key corresponds to the EE certificate's public key.
-    // For RSA: reconstruct the public key from the private key's modulus (n) and
-    // public exponent (e), then compare PEM representations.
-    // Non-RSA key types (EC, etc.) are skipped — forge's PKCS#12 support is RSA-focused.
-    try {
-      const rsaKey = key as forge.pki.rsa.PrivateKey;
-      const certPub = certs[0].publicKey as forge.pki.rsa.PublicKey;
-      const derivedPub = forge.pki.rsa.setPublicKey(rsaKey.n, rsaKey.e);
-      if (forge.pki.publicKeyToPem(derivedPub) !== forge.pki.publicKeyToPem(certPub)) {
-        throw new Error('The private key does not match the public key in the certificate.');
-      }
-    } catch (e) {
-      // Re-throw our own mismatch error; swallow type errors for non-RSA keys.
-      if ((e as Error).message.includes('does not match')) { throw e; }
+    // Uses Node.js crypto so it works for RSA, EC (P-256/384/521), Ed25519, etc.
+    // Strategy: derive the public key from the private key and compare SPKI DER bytes
+    // against the public key embedded in the certificate.
+    const certPubPem = forge.pki.publicKeyToPem(certs[0].publicKey as forge.pki.PublicKey);
+    const derivedSpki = crypto.createPublicKey(privateKeyBuf!).export({ type: 'spki', format: 'der' }) as Buffer;
+    const certSpki = crypto.createPublicKey(certPubPem).export({ type: 'spki', format: 'der' }) as Buffer;
+    if (!derivedSpki.equals(certSpki)) {
+      throw new Error('The private key does not match the public key in the certificate.');
     }
   }
 
