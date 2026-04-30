@@ -8,11 +8,22 @@
   const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string }>();
 
   let expanded: Set<number> = new Set();
+  let rawExpanded: Set<number> = new Set();
 
   function toggle(i: number): void {
     if (expanded.has(i)) { expanded.delete(i); }
     else { expanded.add(i); }
     expanded = expanded; // reactivity trigger
+  }
+
+  function toggleRaw(i: number): void {
+    if (rawExpanded.has(i)) { rawExpanded.delete(i); }
+    else { rawExpanded.add(i); }
+    rawExpanded = rawExpanded; // reactivity trigger
+  }
+
+  function hasDecoded(ext: CertExtension): boolean {
+    return !!ext.value && ext.value !== '(see raw hex)' && ext.value !== '(parse error — see raw hex)';
   }
 </script>
 
@@ -35,7 +46,7 @@
 
       {#if expanded.has(i)}
         <div class="ext-body">
-          {#if ext.value && ext.value !== '(see raw hex)' && ext.value !== '(parse error — see raw hex)'}
+          {#if hasDecoded(ext)}
             <div class="ext-field">
               <div class="ext-field-hdr">
                 <span class="ext-flbl">Value</span>
@@ -67,13 +78,29 @@
             </div>
           {/if}
 
-          <div class="ext-field">
-            <div class="ext-field-hdr">
-              <span class="ext-flbl">Raw (DER hex)</span>
-              <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉ Copy</button>
+          {#if hasDecoded(ext)}
+            <div class="ext-field">
+              <button class="raw-toggle" on:click={() => toggleRaw(i)}>
+                <span class="raw-chev" style="transform: rotate({rawExpanded.has(i) ? '270deg' : '90deg'})">›</span>
+                Raw (DER hex)
+              </button>
+              {#if rawExpanded.has(i)}
+                <div class="ext-field-hdr">
+                  <span></span>
+                  <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉ Copy</button>
+                </div>
+                <pre class="ext-raw">{ext.raw}</pre>
+              {/if}
             </div>
-            <pre class="ext-raw">{ext.raw}</pre>
-          </div>
+          {:else}
+            <div class="ext-field">
+              <div class="ext-field-hdr">
+                <span class="ext-flbl">Raw (DER hex)</span>
+                <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉ Copy</button>
+              </div>
+              <pre class="ext-raw">{ext.raw}</pre>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -163,6 +190,30 @@
   }
 
   .ext-field { display: flex; flex-direction: column; gap: 0.22rem; }
+
+  .raw-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--vscode-descriptionForeground, #888);
+    font-family: var(--vscode-font-family);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    padding: 0;
+  }
+  .raw-toggle:hover { color: var(--vscode-editor-foreground); }
+
+  .raw-chev {
+    font-size: 0.83rem;
+    display: inline-block;
+    transition: transform 0.16s ease;
+    line-height: 1;
+  }
 
   .ext-field-hdr {
     display: flex;
