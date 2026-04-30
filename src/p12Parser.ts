@@ -74,16 +74,77 @@ function loadPrivateKeyFromBuffer(buf: Buffer): forge.pki.PrivateKey {
   }
 }
 
+/** cert.subject / cert.issuer structural type (matches node-forge's inline type). */
+type ForgeDN = { attributes: forge.pki.CertificateField[] };
+
+/**
+ * Returns a string key representing a Distinguished Name by concatenating all
+ * RDN type/value pairs.  Used to match an issuer DN to a subject DN.
+ */
+function dnKey(field: ForgeDN): string {
+  return field.attributes
+    .map(a => `${String(a.type)}=${String(a.value)}`)
+    .join('/');
+}
+
+/**
+ * Sort certificates into chain order: leaf first, then each issuing CA in
+ * order, root last.  Handles arbitrary input order and detached roots.
+ *
+ * node-forge's toPkcs12Asn1 links the private key to the FIRST certificate
+ * via localKeyId, so placing the EE cert first is critical when a key is
+ * present.
+ */
+function sortCertChain(certs: forge.pki.Certificate[]): forge.pki.Certificate[] {
+  if (certs.length <= 1) return certs;
+
+  // Subjects that appear as someone's issuer (i.e. these are CAs of something in the set)
+  const isIssuerOf = new Set<string>();
+  for (const c of certs) {
+    isIssuerOf.add(dnKey(c.issuer as ForgeDN));
+  }
+
+  // The leaf is the cert whose own subject is not issued-to by anyone in the set
+  // (i.e. no other cert in the set vouches for it as an issuer)
+  let leaf = certs.find(c => !isIssuerOf.has(dnKey(c.subject as ForgeDN)));
+  if (!leaf) {
+    leaf = certs[0]; // fallback: broken or self-signed-only chain
+  }
+
+  const sorted: forge.pki.Certificate[] = [leaf];
+  const remaining = new Set(certs.filter(c => c !== leaf));
+  let current = leaf;
+
+  while (remaining.size > 0) {
+    const wantSubject = dnKey(current.issuer as ForgeDN);
+    const next = [...remaining].find(c => dnKey(c.subject as ForgeDN) === wantSubject);
+    if (!next) break; // chain broken or root not included — append leftovers below
+    sorted.push(next);
+    remaining.delete(next);
+    current = next;
+  }
+
+  // Append anything that couldn't be placed (e.g. a detached extra cert)
+  for (const c of remaining) {
+    sorted.push(c);
+  }
+
+  return sorted;
+}
+
 /**
  * Create a PKCS#12 buffer from PEM-encoded certificates and an optional private key.
+ * Certificates are sorted into correct chain order (EE first, root last) before
+ * being written, regardless of the order they are supplied.
  * When no key is supplied the P12 is certificates-only and password is ignored.
  *
- * @param pemCerts     Array of PEM strings (EE cert first, then CAs)
+ * @param pemCerts     Array of PEM strings in any order
  * @param password     Password to protect the private key (ignored when no key)
  * @param privateKeyBuf  Raw buffer of a PEM or DER-encoded private key (optional)
  */
 export function createP12Buffer(pemCerts: string[], password: string, privateKeyBuf?: Buffer): Buffer {
-  const certs = pemCerts.map(pem => forge.pki.certificateFromPem(pem));
+  const unsorted = pemCerts.map(pem => forge.pki.certificateFromPem(pem));
+  const certs = sortCertChain(unsorted);
   const key = privateKeyBuf ? loadPrivateKeyFromBuffer(privateKeyBuf) as forge.pki.rsa.PrivateKey : null;
   const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
     key,
