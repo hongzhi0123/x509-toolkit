@@ -49,3 +49,23 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
 
   return results;
 }
+
+/**
+ * Create a certificates-only PKCS#12 buffer from PEM-encoded certificates.
+ * No private key is included. The first PEM should be the end-entity certificate;
+ * the rest are CA chain certificates.
+ *
+ * @param pemCerts  Array of PEM strings (EE cert first, then CAs)
+ * @param password  Password to protect the archive (may be empty)
+ */
+export function createP12Buffer(pemCerts: string[], password: string): Buffer {
+  const certs = pemCerts.map(pem => forge.pki.certificateFromPem(pem));
+  const p12Asn1 = forge.pkcs12.toPkcs12Asn1(
+    null,   // no private key
+    certs,
+    password,
+    { algorithm: '3des' }
+  );
+  const derStr = forge.asn1.toDer(p12Asn1).getBytes();
+  return Buffer.from(derStr, 'binary');
+}

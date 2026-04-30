@@ -79,6 +79,10 @@
     vscode.postMessage({ type: 'exportCert', ...event.detail });
   }
 
+  function handleCreateP12(event: CustomEvent<{ certPems: string[]; suggestedName: string }>): void {
+    vscode.postMessage({ type: 'createP12', ...event.detail });
+  }
+
   function handleLoadCaIssuer(event: CustomEvent<string>): void {
     const url = event.detail;
     if (loadingUrls.has(url) || downloadedCerts.some(d => d.url === url)) return;
@@ -152,10 +156,12 @@
     {#key activeCert}
       <CertificateView
         cert={activeCert}
+        chainPems={displayChain.map(c => c.raw)}
         {loadingUrls}
         topOffset={chainNavHeight}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
+        on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
       />
     {/key}

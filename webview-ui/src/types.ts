@@ -74,4 +74,5 @@ export type WebviewToExtMsg =
   | { type: 'copyToClipboard'; value: string }
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
-  | { type: 'exportCert'; pem: string; suggestedName: string };
+  | { type: 'exportCert'; pem: string; suggestedName: string }
+  | { type: 'createP12'; certPems: string[]; suggestedName: string };

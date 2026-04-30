@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as https from 'https';
 import * as http from 'http';
 import { parseCertificate } from './certificateParser';
+import { createP12Buffer } from './p12Parser';
 import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
@@ -117,6 +118,33 @@ export function getOrCreatePanel(
           }
           require('fs').writeFileSync(uri.fsPath, data);
           vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
+        });
+      } else if (msg.type === 'createP12') {
+        const { certPems, suggestedName } = msg;
+        vscode.window.showInputBox({
+          title: 'Set P12 Password',
+          prompt: 'Enter a password to protect the P12 file (leave empty for no password)',
+          password: true,
+          ignoreFocusOut: true,
+        }).then(password => {
+          if (password === undefined) return; // user cancelled
+          let p12Buf: Buffer;
+          try {
+            p12Buf = createP12Buffer(certPems, password);
+          } catch (err) {
+            vscode.window.showErrorMessage(`Failed to create P12: ${(err as Error).message}`);
+            return;
+          }
+          vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(suggestedName),
+            filters: { 'PKCS#12 / PFX': ['p12', 'pfx'] },
+            saveLabel: 'Create P12',
+            title: 'Save P12 File',
+          }).then(uri => {
+            if (!uri) return;
+            require('fs').writeFileSync(uri.fsPath, p12Buf);
+            vscode.window.showInformationMessage(`P12 saved to ${uri.fsPath}`);
+          });
         });
       }
     },

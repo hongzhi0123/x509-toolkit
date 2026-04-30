@@ -11,8 +11,10 @@
   export let cert: CertificateData;
   export let loadingUrls: Set<string> = new Set();
   export let topOffset = 0;
+  /** PEM strings for all certs in the current display chain (EE first, then CAs). */
+  export let chainPems: string[] = [];
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -22,6 +24,14 @@
     const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
     const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
     dispatch('export', { pem: cert.raw, suggestedName: `${safeName}.pem` });
+  }
+
+  function createP12(): void {
+    const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
+    const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    // EE cert first, then the rest of the chain as CA certs
+    const allPems = chainPems.length > 0 ? chainPems : [cert.raw];
+    dispatch('createP12', { certPems: allPems, suggestedName: `${safeName}.p12` });
   }
 
   function formatDate(iso: string): string {
@@ -111,6 +121,11 @@
     </div>
     <div class="cert-header-right">
       <ValidityIndicator validity={cert.validity} />
+      {#if !cert.isCA}
+        <button class="export-btn p12-btn" title="Create P12 / PFX with chain" on:click={createP12}>
+          🔒 Create P12
+        </button>
+      {/if}
       <button class="export-btn" title="Export certificate" on:click={exportCert}>
         ⤓ Export
       </button>
@@ -302,6 +317,16 @@
   .export-btn:hover {
     background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
     border-color: var(--vscode-focusBorder, rgba(255,255,255,0.3));
+  }
+
+  .p12-btn {
+    background: var(--vscode-button-background, #7c3aed);
+    color: var(--vscode-button-foreground, #fff);
+    border-color: transparent;
+  }
+  .p12-btn:hover {
+    background: var(--vscode-button-hoverBackground, #6d28d9);
+    border-color: transparent;
   }
 
   .cert-header-left {
