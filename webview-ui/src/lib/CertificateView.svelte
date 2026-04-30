@@ -54,6 +54,35 @@
 
   $: subjectRows = dnFields(cert.subject);
   $: issuerRows  = dnFields(cert.issuer);
+
+  // Derive DER bytes from PEM for the hex dump
+  $: derHex = (() => {
+    try {
+      const b64 = cert.raw
+        .replace(/-----BEGIN CERTIFICATE-----/g, '')
+        .replace(/-----END CERTIFICATE-----/g, '')
+        .replace(/\s+/g, '');
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    } catch { return new Uint8Array(0); }
+  })();
+
+  $: hexDump = (() => {
+    const lines: string[] = [];
+    const COLS = 16;
+    for (let off = 0; off < derHex.length; off += COLS) {
+      const slice = derHex.slice(off, off + COLS);
+      const hex   = Array.from(slice).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      const ascii = Array.from(slice).map(b => (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : '.').join('');
+      const pad   = '   '.repeat(COLS - slice.length);
+      lines.push(`${off.toString(16).padStart(8, '0')}  ${hex}${pad}  |${ascii}|`);
+    }
+    return lines.join('\n');
+  })();
+
+  $: hexDumpText = hexDump;
 </script>
 
 <div class="cert-view">
@@ -206,6 +235,16 @@
           ⧉ Copy PEM
         </button>
         <pre class="raw-pem">{cert.raw}</pre>
+      </div>
+    </SectionCard>
+
+    <!-- Binary DER hex dump -->
+    <SectionCard title="Binary Data (DER, {derHex.length} bytes)" icon="🗂️" collapsed={true}>
+      <div class="raw-pem-wrap">
+        <button class="copy-btn raw-copy-btn" on:click={() => copy(hexDumpText)} title="Copy hex dump">
+          ⧉ Copy
+        </button>
+        <pre class="hex-dump">{hexDump}</pre>
       </div>
     </SectionCard>
 
@@ -393,6 +432,21 @@
     border-radius: 4px;
     border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.09));
     overflow-x: auto;
+  }
+
+  .hex-dump {
+    margin: 0;
+    padding: 0.7rem;
+    font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
+    font-size: 0.69rem;
+    white-space: pre;
+    word-break: normal;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-input-background, rgba(0,0,0,0.18));
+    border-radius: 4px;
+    border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.09));
+    overflow-x: auto;
+    line-height: 1.6;
   }
 
   /* ── Global copy-button style ── */
