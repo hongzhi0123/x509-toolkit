@@ -149,14 +149,16 @@
         {/each}
       </nav>
     {/if}
-    <CertificateView
-      cert={activeCert}
-      {loadingUrls}
-      topOffset={chainNavHeight}
-      on:copy={handleCopyRequest}
-      on:export={handleExportCert}
-      on:loadCaIssuer={handleLoadCaIssuer}
-    />
+    {#key activeCert}
+      <CertificateView
+        cert={activeCert}
+        {loadingUrls}
+        topOffset={chainNavHeight}
+        on:copy={handleCopyRequest}
+        on:export={handleExportCert}
+        on:loadCaIssuer={handleLoadCaIssuer}
+      />
+    {/key}
   {/if}
 </main>
 
