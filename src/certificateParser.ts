@@ -185,10 +185,10 @@ export async function parseCertificate(input: string | Buffer): Promise<Certific
     } else {
       // Possibly base64-encoded DER
       const der = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64');
-      cert = new X509Certificate(der);
+      cert = new X509Certificate(new Uint8Array(der));
     }
   } else {
-    cert = new X509Certificate(input);
+    cert = new X509Certificate(new Uint8Array(input));
   }
 
   const now = new Date();

@@ -68,6 +68,56 @@ export interface CertificateData {
   isSelfSigned: boolean;
 }
 
+// ─── Certificate generation ─────────────────────────────────────────────────
+
+export type KeyAlgorithm = 'RSA-2048' | 'RSA-4096' | 'EC-P256' | 'EC-P384' | 'EC-P521';
+
+export interface CertCreateParams {
+  // Subject DN
+  cn: string;
+  o: string;
+  ou: string;
+  c: string;
+  st: string;
+  l: string;
+  email: string;
+  // SANs — newline or comma separated
+  dnsNames: string;
+  ipAddresses: string;
+  // Key
+  keyAlgorithm: KeyAlgorithm;
+  validityDays: number;
+  // Extensions
+  isCA: boolean;
+  keyUsageDigitalSignature: boolean;
+  keyUsageKeyEncipherment: boolean;
+  keyUsageDataEncipherment: boolean;
+  keyUsageKeyCertSign: boolean;
+  keyUsageCRLSign: boolean;
+  ekuServerAuth: boolean;
+  ekuClientAuth: boolean;
+  ekuCodeSigning: boolean;
+  ekuEmailProtection: boolean;
+  // Signing
+  signingMode: 'self-signed' | 'ca-signed';
+  // P12 password
+  password: string;
+}
+
+export type CreateCertToExtMsg =
+  | { type: 'ready' }
+  | { type: 'pickCaCert' }
+  | { type: 'pickCaKey' }
+  | { type: 'generate'; params: CertCreateParams }
+  | { type: 'cancel' };
+
+export type ExtToCreateCertMsg =
+  | { type: 'caCertLoaded'; subject: string }
+  | { type: 'caKeyLoaded'; description: string }
+  | { type: 'generating' }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
 // ─── Message protocol ────────────────────────────────────────────────────────
 
 export type ExtToWebviewMsg =

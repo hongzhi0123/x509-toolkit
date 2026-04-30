@@ -1,5 +1,11 @@
 import App from './App.svelte';
+import CreateCertPanel from './lib/CreateCertPanel.svelte';
 
-const app = new App({ target: document.getElementById('app')! });
+const appEl = document.getElementById('app')!;
+const view  = (appEl as HTMLElement).dataset.view;
 
-export default app;
+if (view === 'createCert') {
+  new CreateCertPanel({ target: appEl });
+} else {
+  new App({ target: appEl });
+}

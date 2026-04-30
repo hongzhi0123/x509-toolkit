@@ -40,8 +40,13 @@
       },
       {
         "command": "x509viewer.createSelfSignedP12",
-        "title": "X.509 Viewer: Create Self-Signed P12",
+        "title": "X.509 Viewer: Create Self-Signed P12 (legacy)",
         "icon": "$(key)"
+      },
+      {
+        "command": "x509viewer.createCertificate",
+        "title": "X.509 Viewer: Create Certificate",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -64,7 +69,7 @@
           "command": "x509viewer.openP12"
         },
         {
-          "command": "x509viewer.createSelfSignedP12"
+          "command": "x509viewer.createCertificate"
         }
       ]
     }

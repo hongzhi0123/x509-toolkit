@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { parseCertificate, parsePEMChain } from './certificateParser';
 import { parseP12, createSelfSignedP12 } from './p12Parser';
+import { openCreateCertPanel } from './createCertPanel';
 import {
   getOrCreatePanel,
   sendLoading,
@@ -191,6 +192,13 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       vscode.window.showInformationMessage(`Self-signed P12 saved to ${saveUri.fsPath}`);
+    })
+  );
+
+  // Command: open the rich Create Certificate dialog
+  context.subscriptions.push(
+    vscode.commands.registerCommand('x509viewer.createCertificate', () => {
+      openCreateCertPanel(context.extensionUri, context);
     })
   );
 }
