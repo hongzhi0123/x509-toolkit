@@ -43,10 +43,19 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
 
   const results: CertificateData[] = [];
   for (const bag of certBags) {
-    if (!bag.cert) continue;
-    // Convert forge certificate → DER buffer → our CertificateData
-    const derStr = forge.asn1.toDer(forge.pki.certificateToAsn1(bag.cert)).getBytes();
-    const derBuf = Buffer.from(derStr, 'binary');
+    let derBuf: Buffer;
+    if (bag.cert) {
+      // RSA / known-to-forge cert — use forge's own serialiser
+      const derStr = forge.asn1.toDer(forge.pki.certificateToAsn1(bag.cert)).getBytes();
+      derBuf = Buffer.from(derStr, 'binary');
+    } else if (bag.asn1) {
+      // EC or other non-RSA cert — forge parsed the ASN.1 but left bag.cert null;
+      // bag.asn1 contains the raw certificate ASN.1 which @peculiar/x509 can handle
+      const derStr = forge.asn1.toDer(bag.asn1).getBytes();
+      derBuf = Buffer.from(derStr, 'binary');
+    } else {
+      continue;
+    }
     results.push(await parseCertificate(derBuf));
   }
 
