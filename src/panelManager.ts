@@ -208,19 +208,25 @@ export function getOrCreatePanel(
           }
         }
       } else if (msg.type === 'createP12') {
-        const { certPems, suggestedName } = msg;
+        const { certPems, suggestedName, keyPem } = msg;
 
-        // Step 1 — optionally pick a private key file (cancel = certs-only)
-        const keyUris = await vscode.window.showOpenDialog({
-          canSelectMany: false,
-          openLabel: 'Include Key',
-          title: 'Select Private Key File — Cancel to create a certs-only P12',
-          filters: {
-            'Private Key': ['pem', 'key', 'der', 'pk8'],
-            'All Files': ['*'],
-          },
-        });
-        const keyBuf = keyUris?.[0] ? fs.readFileSync(keyUris[0].fsPath) : undefined;
+        // Step 1 — use embedded key if present, otherwise optionally pick a file
+        let keyBuf: Buffer | undefined;
+        if (keyPem) {
+          // Private key already available from the opened certificate — skip the file picker
+          keyBuf = Buffer.from(keyPem, 'utf8');
+        } else {
+          const keyUris = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            openLabel: 'Include Key',
+            title: 'Select Private Key File — Cancel to create a certs-only P12',
+            filters: {
+              'Private Key': ['pem', 'key', 'der', 'pk8'],
+              'All Files': ['*'],
+            },
+          });
+          keyBuf = keyUris?.[0] ? fs.readFileSync(keyUris[0].fsPath) : undefined;
+        }
 
         // Step 2 — ask for password only when a key is included
         let password = '';

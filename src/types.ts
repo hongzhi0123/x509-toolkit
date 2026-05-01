@@ -151,7 +151,7 @@ export type WebviewToExtMsg =
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
   | { type: 'exportCert'; pem: string; suggestedName: string }
-  | { type: 'createP12'; certPems: string[]; suggestedName: string }
+  | { type: 'createP12'; certPems: string[]; suggestedName: string; keyPem?: string }
   | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
   /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
   | { type: 'passphraseResponse'; requestId: string; passphrase: string | null };

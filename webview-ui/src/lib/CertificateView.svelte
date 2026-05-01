@@ -17,7 +17,7 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -34,7 +34,9 @@
     const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
     // EE cert first, then the rest of the chain as CA certs
     const allPems = chainPems.length > 0 ? chainPems : [cert.raw];
-    dispatch('createP12', { certPems: allPems, suggestedName: `${safeName}.p12` });
+    // Use the private key already present in the cert (from P12 import or manual import)
+    const keyPem = cert.privateKey?.pem ?? importedPrivateKey?.pem;
+    dispatch('createP12', { certPems: allPems, suggestedName: `${safeName}.p12`, keyPem });
   }
 
   function formatDate(iso: string): string {
