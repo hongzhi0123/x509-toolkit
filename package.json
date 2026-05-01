@@ -9,6 +9,13 @@
   "author": {
     "name": "Hongzhi Zhang"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hongzhi0123/x509-toolkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hongzhi0123/x509-toolkit/issues"
+  },  
   "engines": {
     "vscode": "^1.85.0"
   },
