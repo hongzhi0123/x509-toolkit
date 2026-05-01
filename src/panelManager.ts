@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { parseCertificate } from './certificateParser';
 import { createP12Buffer, loadAndValidatePrivateKey } from './p12Parser';
 import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
@@ -226,7 +227,36 @@ export function getOrCreatePanel(
               'All Files': ['*'],
             },
           });
-          keyBuf = keyUris?.[0] ? fs.readFileSync(keyUris[0].fsPath) : undefined;
+          if (keyUris?.[0]) {
+            const rawKeyBuf = fs.readFileSync(keyUris[0].fsPath);
+            const keyFileName = keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key';
+
+            // Detect whether the key file is encrypted
+            const keyText = rawKeyBuf.toString('utf8').trim();
+            const isEncryptedPem =
+              keyText.includes('BEGIN ENCRYPTED PRIVATE KEY') ||
+              /Proc-Type:\s*4,ENCRYPTED/i.test(keyText);
+
+            if (isEncryptedPem) {
+              // Prompt for decryption passphrase first
+              const keyPassphrase = await requestPassphraseFromWebview(panel, keyFileName, {
+                title: 'Private Key Passphrase',
+                description: `${keyFileName} is encrypted. Enter its passphrase to decrypt it.`,
+                buttonLabel: 'Decrypt',
+              });
+              if (keyPassphrase === null) return; // user cancelled
+              try {
+                // Decrypt to unencrypted PKCS#8 PEM so createP12Buffer can consume it
+                const nodeKey = crypto.createPrivateKey({ key: keyText, passphrase: keyPassphrase });
+                keyBuf = Buffer.from(nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string, 'utf8');
+              } catch (e) {
+                vscode.window.showErrorMessage(`Failed to decrypt private key: ${(e as Error).message}`);
+                return;
+              }
+            } else {
+              keyBuf = rawKeyBuf;
+            }
+          }
         }
 
         // Step 2 — ask for password only when a key is included
