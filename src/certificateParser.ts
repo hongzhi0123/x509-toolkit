@@ -147,6 +147,8 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
 async function buildPublicKeyInfo(cert: X509Certificate): Promise<PublicKeyInfo> {
   const pubKey = cert.publicKey;
   const spki = bufToHex(pubKey.rawData);
+  const spkiB64Lines = Buffer.from(pubKey.rawData).toString('base64').match(/.{1,64}/g) ?? [];
+  const spkiPem = `-----BEGIN PUBLIC KEY-----\n${spkiB64Lines.join('\n')}\n-----END PUBLIC KEY-----\n`;
   try {
     const cryptoKey = await pubKey.export(cryptoImpl);
     const alg = cryptoKey.algorithm as { name: string; modulusLength?: number; namedCurve?: string };
@@ -155,9 +157,10 @@ async function buildPublicKeyInfo(cert: X509Certificate): Promise<PublicKeyInfo>
       keySize: alg.modulusLength,
       namedCurve: alg.namedCurve,
       spki,
+      spkiPem,
     };
   } catch {
-    return { algorithm: 'Unknown', spki };
+    return { algorithm: 'Unknown', spki, spkiPem };
   }
 }
 

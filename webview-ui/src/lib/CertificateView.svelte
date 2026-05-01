@@ -93,6 +93,9 @@
   })();
 
   $: hexDumpText = hexDump;
+
+  let spkiPemOpen = false;
+  let privKeyPemOpen = false;
 </script>
 
 <div class="cert-view">
@@ -211,9 +214,20 @@
       {#if cert.publicKey.namedCurve}
         <FieldRow label="Named Curve" value={cert.publicKey.namedCurve} />
       {/if}
-      <div class="field-hex">
-        <span class="fh-label">SPKI (Public Key)</span>
-        <HexValue value={cert.publicKey.spki} on:copy={() => copy(cert.publicKey.spki)} />
+      <div class="key-pem-block">
+        <button class="key-pem-toolbar" on:click={() => spkiPemOpen = !spkiPemOpen} aria-expanded={spkiPemOpen}>
+          <span class="key-pem-left">
+            <span class="pem-chevron" style="transform: rotate({spkiPemOpen ? '270deg' : '90deg'})">›</span>
+            <span class="fh-label">SPKI (Public Key)</span>
+          </span>
+          <div class="key-btn-row">
+            <button class="copy-btn" on:click|stopPropagation={() => copy(cert.publicKey.spki)} title="Copy SPKI as hex">⧉ Copy Hex</button>
+            <button class="copy-btn" on:click|stopPropagation={() => copy(cert.publicKey.spkiPem)} title="Copy SPKI as PEM">⧉ Copy PEM</button>
+          </div>
+        </button>
+        {#if spkiPemOpen}
+          <pre class="raw-pem">{cert.publicKey.spkiPem}</pre>
+        {/if}
       </div>
     </SectionCard>
 
@@ -227,11 +241,20 @@
         {#if cert.privateKey.namedCurve}
           <FieldRow label="Named Curve" value={cert.privateKey.namedCurve} />
         {/if}
-        <div class="raw-pem-wrap">
-          <button class="copy-btn raw-copy-btn" on:click={() => copy(cert.privateKey?.pem ?? '')} title="Copy private key PEM">
-            ⧉ Copy PEM
+        <div class="key-pem-block">
+          <button class="key-pem-toolbar" on:click={() => privKeyPemOpen = !privKeyPemOpen} aria-expanded={privKeyPemOpen}>
+            <span class="key-pem-left">
+              <span class="pem-chevron" style="transform: rotate({privKeyPemOpen ? '270deg' : '90deg'})">›</span>
+              <span class="fh-label">PKCS#8 (Private Key)</span>
+            </span>
+            <div class="key-btn-row">
+              <button class="copy-btn" on:click|stopPropagation={() => copy(cert.privateKey?.hex ?? '')} title="Copy PKCS#8 as hex">⧉ Copy Hex</button>
+              <button class="copy-btn" on:click|stopPropagation={() => copy(cert.privateKey?.pem ?? '')} title="Copy PKCS#8 as PEM">⧉ Copy PEM</button>
+            </div>
           </button>
-          <pre class="raw-pem private-key-pem">{cert.privateKey.pem}</pre>
+          {#if privKeyPemOpen}
+            <pre class="raw-pem private-key-pem">{cert.privateKey.pem}</pre>
+          {/if}
         </div>
       </SectionCard>
     {/if}
@@ -452,6 +475,66 @@
     letter-spacing: 0.06em;
     color: var(--vscode-descriptionForeground, #888);
     font-weight: 600;
+  }
+
+  /* ── Key PEM block (public + private) ── */
+  .key-pem-block {
+    padding: 0.3rem 0.7rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .key-pem-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.5rem;
+    background: var(--vscode-sideBarSectionHeader-background, rgba(255,255,255,0.04));
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.08));
+    border-radius: 4px;
+    padding: 0.35rem 0.6rem;
+    cursor: pointer;
+    color: inherit;
+    font-family: var(--vscode-font-family);
+    text-align: left;
+    transition: background 0.12s;
+  }
+
+  .key-pem-toolbar:hover {
+    background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.07));
+  }
+
+  .key-pem-left {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .expand-pem-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    font-family: var(--vscode-font-family);
+  }
+
+  .pem-chevron {
+    font-size: 0.95rem;
+    color: var(--vscode-descriptionForeground, #888);
+    display: inline-block;
+    line-height: 1;
+    transition: transform 0.18s ease;
+  }
+
+  .key-btn-row {
+    display: flex;
+    gap: 0.3rem;
   }
 
   /* ── Raw PEM ── */

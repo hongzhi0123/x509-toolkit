@@ -25,6 +25,8 @@ export interface PublicKeyInfo {
   keySize?: number;
   namedCurve?: string;
   spki: string;
+  /** SPKI encoded as PEM (BEGIN PUBLIC KEY) */
+  spkiPem: string;
 }
 
 export interface SignatureInfo {
@@ -51,6 +53,8 @@ export interface PrivateKeyInfo {
   algorithm: string;
   keySize?: number;
   namedCurve?: string;
+  /** PKCS#8 DER encoded, formatted as colon-separated hex bytes */
+  hex: string;
   /** PKCS#8 PEM-encoded private key */
   pem: string;
 }

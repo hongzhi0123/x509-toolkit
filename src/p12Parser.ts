@@ -3,6 +3,7 @@ import * as forge from 'node-forge';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 import * as x509 from '@peculiar/x509';
 import { parseCertificate } from './certificateParser';
+import { bufToHex } from './certUtils';
 import type { CertificateData, CertCreateParams, PrivateKeyInfo } from './types';
 
 // Use @peculiar/webcrypto which delegates to Node.js crypto under the hood
@@ -91,27 +92,30 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
     try {
       let nodeKey: crypto.KeyObject | null = null;
       let pkcs8Pem: string | null = null;
+      let pkcs8Der: Buffer | null = null;
 
       if (keyBag.asn1) {
         // bag.asn1 is the decrypted PrivateKeyInfo (PKCS#8) — works for RSA and EC
         const derStr = forge.asn1.toDer(keyBag.asn1).getBytes();
-        const derBuf = Buffer.from(derStr, 'binary');
-        nodeKey = crypto.createPrivateKey({ key: derBuf, format: 'der', type: 'pkcs8' });
+        pkcs8Der = Buffer.from(derStr, 'binary');
+        nodeKey = crypto.createPrivateKey({ key: pkcs8Der, format: 'der', type: 'pkcs8' });
         pkcs8Pem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
       } else if (keyBag.key) {
         // Fallback: forge decoded RSA key — convert PKCS#1 → PKCS#8 via Node crypto
         const pkcs1Pem = forge.pki.privateKeyToPem(keyBag.key as forge.pki.rsa.PrivateKey);
         nodeKey = crypto.createPrivateKey(pkcs1Pem);
         pkcs8Pem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+        pkcs8Der = nodeKey.export({ type: 'pkcs8', format: 'der' }) as Buffer;
       }
 
-      if (!nodeKey || !pkcs8Pem) continue;
+      if (!nodeKey || !pkcs8Pem || !pkcs8Der) continue;
 
       const keyType = nodeKey.asymmetricKeyType ?? 'unknown';
       const keyDetails = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
 
       const privKeyInfo: PrivateKeyInfo = {
         algorithm: ALG_MAP[keyType] ?? keyType.toUpperCase(),
+        hex: bufToHex(pkcs8Der),
         pem: pkcs8Pem,
       };
       if (typeof keyDetails.modulusLength === 'number') {
