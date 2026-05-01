@@ -3,7 +3,7 @@ import * as forge from 'node-forge';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 import * as x509 from '@peculiar/x509';
 import { parseCertificate } from './certificateParser';
-import type { CertificateData, CertCreateParams } from './types';
+import type { CertificateData, CertCreateParams, PrivateKeyInfo } from './types';
 
 // Use @peculiar/webcrypto which delegates to Node.js crypto under the hood
 const webcrypto = new PeculiarCrypto();
@@ -33,6 +33,12 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
     throw new Error(`Failed to parse P12: ${msg}`);
   }
 
+  // Helper: read the localKeyId attribute from a bag (OID 1.2.840.113549.1.9.21)
+  function getBagLocalKeyId(bag: forge.pkcs12.Bag): string {
+    const attrs = (bag as unknown as { attributes?: Record<string, string[]> }).attributes ?? {};
+    return attrs['1.2.840.113549.1.9.21']?.[0] ?? '';
+  }
+
   // Collect all certificate bags from all SafeContents
   const bags = p12.getBags({ bagType: forge.pki.oids.certBag });
   const certBags = bags[forge.pki.oids.certBag] ?? [];
@@ -40,6 +46,9 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
   if (certBags.length === 0) {
     throw new Error('No certificates found in this P12 file.');
   }
+
+  // Track localKeyId → results index for key matching
+  const certKeyIdIndexMap = new Map<string, number>();
 
   const results: CertificateData[] = [];
   for (const bag of certBags) {
@@ -56,11 +65,71 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
     } else {
       continue;
     }
+    const keyId = getBagLocalKeyId(bag);
+    if (keyId) certKeyIdIndexMap.set(keyId, results.length);
     results.push(await parseCertificate(derBuf));
   }
 
   if (results.length === 0) {
     throw new Error('No valid certificates could be extracted from this P12 file.');
+  }
+
+  // ── Extract private key bags and attach to the matching certificate ──────
+  const ALG_MAP: Record<string, string> = {
+    rsa: 'RSA', 'rsa-pss': 'RSA-PSS', ec: 'EC',
+    ed25519: 'Ed25519', ed448: 'Ed448', x25519: 'X25519', x448: 'X448',
+  };
+  const CURVE_MAP: Record<string, string> = {
+    prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521',
+    secp256k1: 'secp256k1',
+  };
+
+  const shroudedBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] ?? [];
+  const plainKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag] ?? [];
+
+  for (const keyBag of [...shroudedBags, ...plainKeyBags]) {
+    try {
+      let nodeKey: crypto.KeyObject | null = null;
+      let pkcs8Pem: string | null = null;
+
+      if (keyBag.asn1) {
+        // bag.asn1 is the decrypted PrivateKeyInfo (PKCS#8) — works for RSA and EC
+        const derStr = forge.asn1.toDer(keyBag.asn1).getBytes();
+        const derBuf = Buffer.from(derStr, 'binary');
+        nodeKey = crypto.createPrivateKey({ key: derBuf, format: 'der', type: 'pkcs8' });
+        pkcs8Pem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+      } else if (keyBag.key) {
+        // Fallback: forge decoded RSA key — convert PKCS#1 → PKCS#8 via Node crypto
+        const pkcs1Pem = forge.pki.privateKeyToPem(keyBag.key as forge.pki.rsa.PrivateKey);
+        nodeKey = crypto.createPrivateKey(pkcs1Pem);
+        pkcs8Pem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+      }
+
+      if (!nodeKey || !pkcs8Pem) continue;
+
+      const keyType = nodeKey.asymmetricKeyType ?? 'unknown';
+      const keyDetails = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
+
+      const privKeyInfo: PrivateKeyInfo = {
+        algorithm: ALG_MAP[keyType] ?? keyType.toUpperCase(),
+        pem: pkcs8Pem,
+      };
+      if (typeof keyDetails.modulusLength === 'number') {
+        privKeyInfo.keySize = keyDetails.modulusLength;
+      }
+      if (typeof keyDetails.namedCurve === 'string') {
+        privKeyInfo.namedCurve = CURVE_MAP[keyDetails.namedCurve] ?? keyDetails.namedCurve;
+      }
+
+      // Find the matching cert by localKeyId, falling back to the first cert
+      const keyId = getBagLocalKeyId(keyBag);
+      const targetIndex = (keyId && certKeyIdIndexMap.has(keyId))
+        ? certKeyIdIndexMap.get(keyId)!
+        : 0;
+      results[targetIndex] = { ...results[targetIndex], privateKey: privKeyInfo };
+    } catch {
+      // Key extraction is best-effort — skip silently if something fails
+    }
   }
 
   return results;

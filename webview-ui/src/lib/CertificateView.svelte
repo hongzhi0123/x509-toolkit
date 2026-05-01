@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { CertificateData, DistinguishedName } from '../types';
+  import type { CertificateData, DistinguishedName, PrivateKeyInfo } from '../types';
   import SectionCard from './SectionCard.svelte';
   import FieldRow from './FieldRow.svelte';
   import ValidityIndicator from './ValidityIndicator.svelte';
@@ -216,6 +216,25 @@
         <HexValue value={cert.publicKey.spki} on:copy={() => copy(cert.publicKey.spki)} />
       </div>
     </SectionCard>
+
+    <!-- Private Key (present only when loaded from a P12 that included it) -->
+    {#if cert.privateKey}
+      <SectionCard title="Private Key" icon="🗝️">
+        <FieldRow label="Algorithm" value={cert.privateKey.algorithm} />
+        {#if cert.privateKey.keySize}
+          <FieldRow label="Key Size" value="{cert.privateKey.keySize} bits" />
+        {/if}
+        {#if cert.privateKey.namedCurve}
+          <FieldRow label="Named Curve" value={cert.privateKey.namedCurve} />
+        {/if}
+        <div class="raw-pem-wrap">
+          <button class="copy-btn raw-copy-btn" on:click={() => copy(cert.privateKey?.pem ?? '')} title="Copy private key PEM">
+            ⧉ Copy PEM
+          </button>
+          <pre class="raw-pem private-key-pem">{cert.privateKey.pem}</pre>
+        </div>
+      </SectionCard>
+    {/if}
 
     <!-- Signature -->
     <SectionCard title="Signature" icon="✍️">
@@ -457,6 +476,11 @@
     border-radius: 4px;
     border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.09));
     overflow-x: auto;
+  }
+
+  .private-key-pem {
+    border-color: rgba(250, 179, 135, 0.3);
+    background: rgba(250, 179, 135, 0.05);
   }
 
   .hex-dump {

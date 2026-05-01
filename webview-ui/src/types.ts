@@ -47,6 +47,14 @@ export interface Fingerprints {
   sha256: string;
 }
 
+export interface PrivateKeyInfo {
+  algorithm: string;
+  keySize?: number;
+  namedCurve?: string;
+  /** PKCS#8 PEM-encoded private key */
+  pem: string;
+}
+
 export interface CertificateData {
   version: number;
   serialNumber: string;
@@ -60,6 +68,8 @@ export interface CertificateData {
   raw: string;
   isCA: boolean;
   isSelfSigned: boolean;
+  /** Present when this cert was loaded from a P12/PFX that included the matching private key */
+  privateKey?: PrivateKeyInfo;
 }
 
 // ─── Certificate generation ─────────────────────────────────────────────────
