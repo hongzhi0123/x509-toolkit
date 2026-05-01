@@ -8,21 +8,22 @@ import {
   sendLoading,
   sendCertificates,
   sendError,
+  requestPassphraseFromWebview,
 } from './panelManager';
 
 async function openP12File(
   filePath: string,
   panel: ReturnType<typeof getOrCreatePanel>,
 ): Promise<void> {
-  const password = await vscode.window.showInputBox({
+  const fileName = filePath.split(/[\\/]/).pop() ?? 'file.p12';
+  const password = await requestPassphraseFromWebview(panel, fileName, {
     title: 'P12 / PFX Password',
-    prompt: 'Enter the password for this PKCS#12 file (leave empty if none)',
-    password: true,
-    ignoreFocusOut: true,
+    description: `Enter the password for ${fileName}. Leave empty if the file has no password.`,
+    buttonLabel: 'Open',
   });
 
-  // undefined means the user pressed Escape
-  if (password === undefined) {
+  // null means the user cancelled
+  if (password === null) {
     sendError(panel, 'Operation cancelled.');
     return;
   }

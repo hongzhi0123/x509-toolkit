@@ -14,14 +14,15 @@ let currentPanel: vscode.WebviewPanel | undefined;
 // ------------------------------------------------------------------
 const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
 
-function requestPassphraseFromWebview(
+export function requestPassphraseFromWebview(
   panel: vscode.WebviewPanel,
-  fileName: string
+  fileName: string,
+  options?: { title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean }
 ): Promise<string | null> {
   const requestId = `pp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return new Promise<string | null>(resolve => {
     pendingPassphraseRequests.set(requestId, resolve);
-    const msg: ExtToWebviewMsg = { type: 'requestPassphrase', requestId, fileName };
+    const msg: ExtToWebviewMsg = { type: 'requestPassphrase', requestId, fileName, ...options };
     panel.webview.postMessage(msg);
   });
 }
@@ -231,13 +232,14 @@ export function getOrCreatePanel(
         // Step 2 — ask for password only when a key is included
         let password = '';
         if (keyBuf) {
-          const input = await vscode.window.showInputBox({
+          const baseName = suggestedName.split(/[\\/]/).pop() ?? suggestedName;
+          const input = await requestPassphraseFromWebview(panel, baseName, {
             title: 'Set P12 Password',
-            prompt: 'Enter a password to protect the private key (leave empty for no password)',
-            password: true,
-            ignoreFocusOut: true,
+            description: `Enter a password to protect the private key in ${baseName}. Leave empty for no password.`,
+            buttonLabel: 'Set Password',
+            requireConfirm: true,
           });
-          if (input === undefined) return; // user cancelled
+          if (input === null) return; // user cancelled
           password = input;
         }
 

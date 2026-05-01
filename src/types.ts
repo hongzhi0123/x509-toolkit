@@ -143,7 +143,7 @@ export type ExtToWebviewMsg =
   | { type: 'privateKeyImported'; certIndex: number; key: PrivateKeyInfo }
   | { type: 'privateKeyImportError'; certIndex: number; message: string }
   /** Extension asks the webview to show an in-panel passphrase dialog */
-  | { type: 'requestPassphrase'; requestId: string; fileName: string };
+  | { type: 'requestPassphrase'; requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean };
 
 export type WebviewToExtMsg =
   | { type: 'ready' }

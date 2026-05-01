@@ -128,7 +128,7 @@ export type ExtToWebviewMsg =
   | { type: 'caIssuerError'; url: string; message: string }
   | { type: 'privateKeyImported'; certIndex: number; key: PrivateKeyInfo }
   | { type: 'privateKeyImportError'; certIndex: number; message: string }
-  | { type: 'requestPassphrase'; requestId: string; fileName: string };
+  | { type: 'requestPassphrase'; requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean };
 
 export type WebviewToExtMsg =
   | { type: 'ready' }

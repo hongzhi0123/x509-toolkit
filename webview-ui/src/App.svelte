@@ -30,7 +30,7 @@
   let importKeyErrors: Map<number, string> = new Map();
 
   // Pending passphrase request from the extension host
-  let passphraseRequest: { requestId: string; fileName: string } | null = null;
+  let passphraseRequest: { requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean } | null = null;
 
   $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
   $: activeCert = displayChain[activeIndex] ?? null;
@@ -88,7 +88,7 @@
           break;
         }
         case 'requestPassphrase': {
-          passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName };
+          passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName, title: msg.title, description: msg.description, buttonLabel: msg.buttonLabel, requireConfirm: msg.requireConfirm };
           break;
         }
       }
@@ -219,6 +219,10 @@
 {#if passphraseRequest}
   <PassphraseDialog
     fileName={passphraseRequest.fileName}
+    title={passphraseRequest.title ?? 'Encrypted Private Key'}
+    description={passphraseRequest.description}
+    buttonLabel={passphraseRequest.buttonLabel ?? 'Decrypt'}
+    requireConfirm={passphraseRequest.requireConfirm ?? false}
     on:submit={handlePassphraseSubmit}
     on:cancel={handlePassphraseCancel}
   />

@@ -2,24 +2,35 @@
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
   export let fileName: string = 'private key';
+  export let title: string = 'Encrypted Private Key';
+  export let description: string | undefined = undefined;
+  export let buttonLabel: string = 'Decrypt';
+  export let requireConfirm: boolean = false;
 
   const dispatch = createEventDispatcher<{ submit: string; cancel: void }>();
 
   let passphrase = '';
+  let confirm = '';
   let showPassword = false;
   let inputEl: HTMLInputElement;
+
+  $: mismatch = requireConfirm && confirm !== '' && passphrase !== confirm;
+  $: canSubmit = !requireConfirm || passphrase === confirm;
 
   onMount(() => {
     inputEl?.focus();
   });
 
   function submit() {
+    if (!canSubmit) return;
     dispatch('submit', passphrase);
     passphrase = '';
+    confirm = '';
   }
 
   function cancel() {
     passphrase = '';
+    confirm = '';
     dispatch('cancel');
   }
 
@@ -35,52 +46,91 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pp-title" on:keydown={handleKeydown}>
     <div class="dialog-header">
       <span class="lock-icon">🔒</span>
-      <h2 id="pp-title">Encrypted Private Key</h2>
+      <h2 id="pp-title">{title}</h2>
     </div>
 
     <p class="dialog-desc">
-      <span class="file-name">{fileName}</span> is password-protected.
-      Enter the passphrase to decrypt it.
+      {#if description}
+        {description}
+      {:else}
+        <span class="file-name">{fileName}</span> is password-protected.
+        Enter the passphrase to decrypt it.
+      {/if}
     </p>
 
     <div class="input-row">
+      <label class="input-label" for="pp-passphrase">{requireConfirm ? 'Password' : 'Passphrase'}</label>
       <div class="input-wrap">
         {#if showPassword}
           <input
+            id="pp-passphrase"
             bind:this={inputEl}
             bind:value={passphrase}
             type="text"
             class="passphrase-input"
-            placeholder="Passphrase"
-            autocomplete="off"
+            placeholder={requireConfirm ? 'Password' : 'Passphrase'}
+            autocomplete={requireConfirm ? 'new-password' : 'off'}
             spellcheck="false"
           />
         {:else}
           <input
+            id="pp-passphrase"
             bind:this={inputEl}
             bind:value={passphrase}
             type="password"
             class="passphrase-input"
-            placeholder="Passphrase"
-            autocomplete="off"
+            placeholder={requireConfirm ? 'Password' : 'Passphrase'}
+            autocomplete={requireConfirm ? 'new-password' : 'off'}
             spellcheck="false"
           />
         {/if}
         <button
           class="reveal-btn"
           type="button"
-          title={showPassword ? 'Hide passphrase' : 'Show passphrase'}
+          title={showPassword ? 'Hide' : 'Show'}
           on:click={async () => { showPassword = !showPassword; await tick(); inputEl?.focus(); }}
           tabindex="-1"
         >
           {showPassword ? '🙈' : '👁'}
         </button>
       </div>
+
+      {#if requireConfirm}
+        <label class="input-label" for="pp-confirm" style="margin-top: 0.6rem;">Confirm Password</label>
+        <div class="input-wrap">
+          {#if showPassword}
+            <input
+              id="pp-confirm"
+              bind:value={confirm}
+              type="text"
+              class="passphrase-input"
+              class:passphrase-input-error={mismatch}
+              placeholder="Confirm Password"
+              autocomplete="new-password"
+              spellcheck="false"
+            />
+          {:else}
+            <input
+              id="pp-confirm"
+              bind:value={confirm}
+              type="password"
+              class="passphrase-input"
+              class:passphrase-input-error={mismatch}
+              placeholder="Confirm Password"
+              autocomplete="new-password"
+              spellcheck="false"
+            />
+          {/if}
+        </div>
+        {#if mismatch}
+          <span class="mismatch-hint">Passwords do not match</span>
+        {/if}
+      {/if}
     </div>
 
     <div class="dialog-footer">
       <button class="btn btn-cancel" type="button" on:click={cancel}>Cancel</button>
-      <button class="btn btn-ok" type="button" on:click={submit}>Decrypt</button>
+      <button class="btn btn-ok" type="button" on:click={submit} disabled={!canSubmit}>{buttonLabel}</button>
     </div>
   </div>
 </div>
@@ -238,5 +288,26 @@
 
   .btn-ok:hover {
     background: var(--vscode-button-hoverBackground, #1177bb);
+  }
+
+  .btn-ok:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .input-label {
+    font-size: 0.78rem;
+    color: var(--vscode-descriptionForeground, #aaa);
+    margin-bottom: 0;
+  }
+
+  .mismatch-hint {
+    font-size: 0.75rem;
+    color: var(--vscode-inputValidation-errorForeground, #f38ba8);
+    margin-top: 0.1rem;
+  }
+
+  .passphrase-input-error {
+    border-color: var(--vscode-inputValidation-errorBorder, #f38ba8) !important;
   }
 </style>
