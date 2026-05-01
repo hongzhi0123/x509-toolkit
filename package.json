@@ -1,13 +1,16 @@
 {
-  "name": "x509-viewer",
-  "displayName": "X.509 Certificate Viewer",
-  "description": "View and analyze X.509 certificates with a rich Svelte-powered web UI. Supports PEM from editor selection and DER/PEM binary files.",
+  "name": "x509-toolkit",
+  "displayName": "X.509 Certificate Toolkit",
+  "description": "View and analyze X.509 certificates. Supports PEM, DER, PFX files.",
   "version": "0.1.0",
-  "publisher": "x509viewer",
+  "publisher": "x509toolkit",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Visualization",
+    "Debuggers",
     "Other"
   ],
   "keywords": [
@@ -15,6 +18,9 @@
     "certificate",
     "pem",
     "der",
+    "pfx",
+    "p12",
+    "pkcs12",
     "ssl",
     "tls",
     "pkix"
@@ -24,52 +30,52 @@
   "contributes": {
     "commands": [
       {
-        "command": "x509viewer.showFromSelection",
-        "title": "X.509 Viewer: Show Certificate from Selection",
+        "command": "x509toolkit.showFromSelection",
+        "title": "X.509 Toolkit: Show Certificate from Selection",
         "icon": "$(shield)"
       },
       {
-        "command": "x509viewer.openFile",
-        "title": "X.509 Viewer: Open Certificate File",
+        "command": "x509toolkit.openFile",
+        "title": "X.509 Toolkit: Open Certificate File",
         "icon": "$(file-binary)"
       },
       {
-        "command": "x509viewer.openP12",
-        "title": "X.509 Viewer: Open P12 / PFX File",
+        "command": "x509toolkit.openP12",
+        "title": "X.509 Toolkit: Open P12 / PFX File",
         "icon": "$(file-binary)"
       },
       {
-        "command": "x509viewer.createSelfSignedP12",
-        "title": "X.509 Viewer: Create Self-Signed P12 (legacy)",
+        "command": "x509toolkit.createSelfSignedP12",
+        "title": "X.509 Toolkit: Create Self-Signed P12 (legacy)",
         "icon": "$(key)"
       },
       {
-        "command": "x509viewer.createCertificate",
-        "title": "X.509 Viewer: Create Certificate",
+        "command": "x509toolkit.createCertificate",
+        "title": "X.509 Toolkit: Create Certificate",
         "icon": "$(add)"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "x509viewer.showFromSelection",
+          "command": "x509toolkit.showFromSelection",
           "when": "editorTextFocus && editorHasSelection",
           "group": "1_modification@100"
         }
       ],
       "commandPalette": [
         {
-          "command": "x509viewer.showFromSelection",
+          "command": "x509toolkit.showFromSelection",
           "when": "editorTextFocus"
         },
         {
-          "command": "x509viewer.openFile"
+          "command": "x509toolkit.openFile"
         },
         {
-          "command": "x509viewer.openP12"
+          "command": "x509toolkit.openP12"
         },
         {
-          "command": "x509viewer.createCertificate"
+          "command": "x509toolkit.createCertificate"
         }
       ]
     }

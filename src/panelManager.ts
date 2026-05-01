@@ -76,8 +76,8 @@ export function getOrCreatePanel(
   }
 
   const panel = vscode.window.createWebviewPanel(
-    'x509viewer',
-    'X.509 Certificate Viewer',
+    'x509toolkit',
+    'X.509 Certificate Toolkit',
     { viewColumn: vscode.ViewColumn.Two, preserveFocus: false },
     {
       enableScripts: true,
@@ -356,7 +356,7 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
                  style-src ${webview.cspSource} 'unsafe-inline';
                  script-src 'nonce-${nonce}';">
   <link href="${styleUri}" rel="stylesheet">
-  <title>X.509 Certificate Viewer</title>
+  <title>X.509 Certificate Toolkit</title>
 </head>
 <body>
   <div id="app"></div>

@@ -147,10 +147,10 @@
   {#if state === 'idle'}
     <div class="empty-state">
       <span class="state-icon">🔐</span>
-      <h2>X.509 Certificate Viewer</h2>
+      <h2>X.509 Certificate Toolkit</h2>
       <p>
         Select PEM text in the editor and run
-        <strong>X.509 Viewer: Show Certificate from Selection</strong>,
+        <strong>X.509 Toolkit: Show Certificate from Selection</strong>,
         or use <strong>Open Certificate File</strong> to load a PEM / DER file.
       </p>
     </div>

@@ -1,5 +1,5 @@
 {
-  "name": "x509-viewer-webview",
+  "name": "x509-toolkit-webview",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -35,7 +35,7 @@ async function openP12File(
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('x509viewer.showFromSelection', async () => {
+    vscode.commands.registerCommand('x509toolkit.showFromSelection', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         vscode.window.showWarningMessage('No active editor found.');
@@ -68,7 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Command: open certificate file (PEM, DER, P12/PFX)
   context.subscriptions.push(
-    vscode.commands.registerCommand('x509viewer.openFile', async () => {
+    vscode.commands.registerCommand('x509toolkit.openFile', async () => {
       const uris = await vscode.window.showOpenDialog({
         canSelectMany: false,
         openLabel: 'Open Certificate',
@@ -110,7 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Command: open P12/PFX file explicitly
   context.subscriptions.push(
-    vscode.commands.registerCommand('x509viewer.openP12', async () => {
+    vscode.commands.registerCommand('x509toolkit.openP12', async () => {
       const uris = await vscode.window.showOpenDialog({
         canSelectMany: false,
         openLabel: 'Open P12 / PFX',
@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Command: generate a sample self-signed P12
   context.subscriptions.push(
-    vscode.commands.registerCommand('x509viewer.createSelfSignedP12', async () => {
+    vscode.commands.registerCommand('x509toolkit.createSelfSignedP12', async () => {
       const cn = await vscode.window.showInputBox({
         title: 'Create Self-Signed P12 — Common Name',
         prompt: 'Common Name (CN) for the certificate',
@@ -198,7 +198,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Command: open the rich Create Certificate dialog
   context.subscriptions.push(
-    vscode.commands.registerCommand('x509viewer.createCertificate', () => {
+    vscode.commands.registerCommand('x509toolkit.createCertificate', () => {
       openCreateCertPanel(context.extensionUri, context);
     })
   );
