@@ -205,7 +205,7 @@
         importedPrivateKey={importedKeys.get(activeIndex)}
         importKeyError={importKeyErrors.get(activeIndex)}
         {loadingUrls}
-        topOffset={chainNavHeight}
+        topOffset={displayChain.length > 1 ? chainNavHeight : 0}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
         on:createP12={handleCreateP12}
