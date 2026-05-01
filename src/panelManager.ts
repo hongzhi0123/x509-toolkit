@@ -3,14 +3,28 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import { parseCertificate } from './certificateParser';
-import { createP12Buffer } from './p12Parser';
+import { createP12Buffer, loadAndValidatePrivateKey } from './p12Parser';
 import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 
 // ------------------------------------------------------------------
-// CA Issuer download helper
+// Passphrase request bridge
+// Maps requestId → resolve function of the awaiting Promise
 // ------------------------------------------------------------------
+const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
+
+function requestPassphraseFromWebview(
+  panel: vscode.WebviewPanel,
+  fileName: string
+): Promise<string | null> {
+  const requestId = `pp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise<string | null>(resolve => {
+    pendingPassphraseRequests.set(requestId, resolve);
+    const msg: ExtToWebviewMsg = { type: 'requestPassphrase', requestId, fileName };
+    panel.webview.postMessage(msg);
+  });
+}
 
 function downloadBytesFromUrl(url: string, redirectsLeft = 3): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -77,6 +91,12 @@ export function getOrCreatePanel(
       if (msg.type === 'copyToClipboard') {
         vscode.env.clipboard.writeText(msg.value);
         vscode.window.showInformationMessage('Copied to clipboard.');
+      } else if (msg.type === 'passphraseResponse') {
+        const resolve = pendingPassphraseRequests.get(msg.requestId);
+        if (resolve) {
+          pendingPassphraseRequests.delete(msg.requestId);
+          resolve(msg.passphrase);
+        }
       } else if (msg.type === 'downloadCaIssuer') {
         const { url } = msg;
         downloadBytesFromUrl(url)
@@ -120,6 +140,73 @@ export function getOrCreatePanel(
           fs.writeFileSync(uri.fsPath, data);
           vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
         });
+      } else if (msg.type === 'importPrivateKey') {
+        const { certIndex, spkiPem } = msg;
+        const keyUris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Import Private Key',
+          title: 'Select Private Key File (PEM or DER)',
+          filters: {
+            'Private Key': ['pem', 'key', 'der', 'pk8'],
+            'All Files': ['*'],
+          },
+        });
+        if (!keyUris?.[0]) return; // user cancelled
+        const keyBuf = fs.readFileSync(keyUris[0].fsPath);
+
+        // Detect encrypted PEM upfront so we can ask for a passphrase before parsing
+        const keyText = keyBuf.toString('utf8');
+        const isEncryptedPem =
+          keyText.includes('BEGIN ENCRYPTED PRIVATE KEY') ||
+          /Proc-Type:\s*4,ENCRYPTED/i.test(keyText);
+
+        let passphrase: string | undefined;
+        if (isEncryptedPem) {
+          const input = await requestPassphraseFromWebview(
+            panel,
+            keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key'
+          );
+          if (input === null) return; // user cancelled
+          passphrase = input;
+        }
+
+        const postKeyResult = async (pass: string | undefined) => {
+          try {
+            const keyInfo = loadAndValidatePrivateKey(keyBuf, spkiPem, pass);
+            const reply: ExtToWebviewMsg = { type: 'privateKeyImported', certIndex, key: keyInfo };
+            panel.webview.postMessage(reply);
+            return true;
+          } catch (err) {
+            return err as Error;
+          }
+        };
+
+        const result = await postKeyResult(passphrase);
+        if (result === true) {
+          // success — handled inside
+        } else {
+          // If we didn't ask for a passphrase yet and the error suggests the key
+          // is encrypted (e.g. encrypted DER), give the user one chance to provide one
+          const errMsg = result.message;
+          if (!passphrase && /passphrase|bad decrypt|encrypt|unsupported|interrupt/i.test(errMsg)) {
+            const input = await requestPassphraseFromWebview(
+              panel,
+              keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key'
+            );
+            if (input === null) return; // user cancelled — no error shown
+            const retry = await postKeyResult(input);
+            if (retry !== true) {
+              panel.webview.postMessage({
+                type: 'privateKeyImportError', certIndex,
+                message: (retry as Error).message,
+              } as ExtToWebviewMsg);
+            }
+          } else {
+            panel.webview.postMessage({
+              type: 'privateKeyImportError', certIndex, message: errMsg,
+            } as ExtToWebviewMsg);
+          }
+        }
       } else if (msg.type === 'createP12') {
         const { certPems, suggestedName } = msg;
 

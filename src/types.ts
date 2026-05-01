@@ -139,7 +139,11 @@ export type ExtToWebviewMsg =
   | { type: 'certificate'; chain: CertificateData[]; activeIndex: number }
   | { type: 'error'; message: string }
   | { type: 'caIssuerCert'; cert: CertificateData; url: string }
-  | { type: 'caIssuerError'; url: string; message: string };
+  | { type: 'caIssuerError'; url: string; message: string }
+  | { type: 'privateKeyImported'; certIndex: number; key: PrivateKeyInfo }
+  | { type: 'privateKeyImportError'; certIndex: number; message: string }
+  /** Extension asks the webview to show an in-panel passphrase dialog */
+  | { type: 'requestPassphrase'; requestId: string; fileName: string };
 
 export type WebviewToExtMsg =
   | { type: 'ready' }
@@ -147,4 +151,7 @@ export type WebviewToExtMsg =
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
   | { type: 'exportCert'; pem: string; suggestedName: string }
-  | { type: 'createP12'; certPems: string[]; suggestedName: string };
+  | { type: 'createP12'; certPems: string[]; suggestedName: string }
+  | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
+  /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
+  | { type: 'passphraseResponse'; requestId: string; passphrase: string | null };

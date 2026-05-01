@@ -76,15 +76,6 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
   }
 
   // ── Extract private key bags and attach to the matching certificate ──────
-  const ALG_MAP: Record<string, string> = {
-    rsa: 'RSA', 'rsa-pss': 'RSA-PSS', ec: 'EC',
-    ed25519: 'Ed25519', ed448: 'Ed448', x25519: 'X25519', x448: 'X448',
-  };
-  const CURVE_MAP: Record<string, string> = {
-    prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521',
-    secp256k1: 'secp256k1',
-  };
-
   const shroudedBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] ?? [];
   const plainKeyBags = p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag] ?? [];
 
@@ -114,7 +105,7 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
       const keyDetails = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
 
       const privKeyInfo: PrivateKeyInfo = {
-        algorithm: ALG_MAP[keyType] ?? keyType.toUpperCase(),
+        algorithm: ALG_DISPLAY[keyType] ?? keyType.toUpperCase(),
         hex: bufToHex(pkcs8Der),
         pem: pkcs8Pem,
       };
@@ -122,7 +113,7 @@ export async function parseP12(buf: Buffer, password: string): Promise<Certifica
         privKeyInfo.keySize = keyDetails.modulusLength;
       }
       if (typeof keyDetails.namedCurve === 'string') {
-        privKeyInfo.namedCurve = CURVE_MAP[keyDetails.namedCurve] ?? keyDetails.namedCurve;
+        privKeyInfo.namedCurve = CURVE_DISPLAY[keyDetails.namedCurve] ?? keyDetails.namedCurve;
       }
 
       // Find the matching cert by localKeyId, falling back to the first cert
@@ -219,6 +210,76 @@ function sortCertChain(certs: forge.pki.Certificate[]): forge.pki.Certificate[] 
   }
 
   return sorted;
+}
+
+const ALG_DISPLAY: Record<string, string> = {
+  rsa: 'RSA', 'rsa-pss': 'RSA-PSS', ec: 'EC',
+  ed25519: 'Ed25519', ed448: 'Ed448', x25519: 'X25519', x448: 'X448',
+};
+const CURVE_DISPLAY: Record<string, string> = {
+  prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521',
+  secp256k1: 'secp256k1',
+};
+
+/**
+ * Load a private key buffer (PEM or DER), validate that it matches the
+ * certificate identified by its SPKI PEM, and return a PrivateKeyInfo.
+ * Throws a human-readable error on mismatch or parse failure.
+ */
+export function loadAndValidatePrivateKey(keyBuf: Buffer, spkiPem: string, passphrase?: string): PrivateKeyInfo {
+  // Parse the private key — try PKCS#8 first, then PKCS#1/SEC1 for PEM
+  let nodeKey: crypto.KeyObject;
+  try {
+    const text = keyBuf.toString('utf8').trim();
+    if (text.startsWith('-----BEGIN')) {
+      nodeKey = passphrase !== undefined
+        ? crypto.createPrivateKey({ key: text, passphrase })
+        : crypto.createPrivateKey(text);
+    } else {
+      // DER — try PKCS#8, then PKCS#1 RSA, then SEC1 EC
+      const formats: { type: 'pkcs8' | 'pkcs1' | 'sec1' }[] = [
+        { type: 'pkcs8' }, { type: 'pkcs1' }, { type: 'sec1' },
+      ];
+      let last: Error | undefined;
+      let parsed: crypto.KeyObject | undefined;
+      for (const f of formats) {
+        try {
+          const keyInput = passphrase !== undefined
+            ? { key: keyBuf, format: 'der' as const, type: f.type, passphrase }
+            : { key: keyBuf, format: 'der' as const, type: f.type };
+          parsed = crypto.createPrivateKey(keyInput);
+          break;
+        } catch (e) { last = e as Error; }
+      }
+      if (!parsed) throw last ?? new Error('Could not parse DER key');
+      nodeKey = parsed;
+    }
+  } catch (e) {
+    throw new Error(`Failed to parse private key: ${(e as Error).message}`);
+  }
+
+  // Derive public key from the private key and compare SPKI DER bytes
+  const derivedSpki = crypto.createPublicKey(nodeKey).export({ type: 'spki', format: 'der' }) as Buffer;
+  const certSpki = crypto.createPublicKey(spkiPem).export({ type: 'spki', format: 'der' }) as Buffer;
+  if (!derivedSpki.equals(certSpki)) {
+    throw new Error('The private key does not match the public key in this certificate.');
+  }
+
+  const pkcs8Der = nodeKey.export({ type: 'pkcs8', format: 'der' }) as Buffer;
+  const pkcs8Pem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+  const keyType = nodeKey.asymmetricKeyType ?? 'unknown';
+  const keyDetails = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
+
+  const info: PrivateKeyInfo = {
+    algorithm: ALG_DISPLAY[keyType] ?? keyType.toUpperCase(),
+    hex: bufToHex(pkcs8Der),
+    pem: pkcs8Pem,
+  };
+  if (typeof keyDetails.modulusLength === 'number') info.keySize = keyDetails.modulusLength;
+  if (typeof keyDetails.namedCurve === 'string') {
+    info.namedCurve = CURVE_DISPLAY[keyDetails.namedCurve] ?? keyDetails.namedCurve;
+  }
+  return info;
 }
 
 /**

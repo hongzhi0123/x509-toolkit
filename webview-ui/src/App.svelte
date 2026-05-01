@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
+  import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo } from './types';
   import CertificateView from './lib/CertificateView.svelte';
+  import PassphraseDialog from './lib/PassphraseDialog.svelte';
 
   // VS Code injects acquireVsCodeApi() into the webview context
   declare function acquireVsCodeApi(): {
@@ -24,6 +25,13 @@
   let loadingUrls: Set<string> = new Set();
   let chainNavHeight = 0;
 
+  // Per-cert imported private keys (keyed by cert index in chain)
+  let importedKeys: Map<number, PrivateKeyInfo> = new Map();
+  let importKeyErrors: Map<number, string> = new Map();
+
+  // Pending passphrase request from the extension host
+  let passphraseRequest: { requestId: string; fileName: string } | null = null;
+
   $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
   $: activeCert = displayChain[activeIndex] ?? null;
 
@@ -43,6 +51,8 @@
           activeIndex = msg.activeIndex;
           downloadedCerts = [];
           loadingUrls = new Set();
+          importedKeys = new Map();
+          importKeyErrors = new Map();
           state = 'ready';
           break;
         case 'error':
@@ -63,6 +73,22 @@
           loadingUrls.delete(msg.url);
           loadingUrls = loadingUrls;
           errorMessage = `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
+          break;
+        }
+        case 'privateKeyImported': {
+          importedKeys.set(msg.certIndex, msg.key);
+          importedKeys = importedKeys;
+          importKeyErrors.delete(msg.certIndex);
+          importKeyErrors = importKeyErrors;
+          break;
+        }
+        case 'privateKeyImportError': {
+          importKeyErrors.set(msg.certIndex, msg.message);
+          importKeyErrors = importKeyErrors;
+          break;
+        }
+        case 'requestPassphrase': {
+          passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName };
           break;
         }
       }
@@ -89,6 +115,24 @@
     loadingUrls.add(url);
     loadingUrls = loadingUrls;
     vscode.postMessage({ type: 'downloadCaIssuer', url });
+  }
+
+  function handleImportPrivateKey(event: CustomEvent<{ certIndex: number; spkiPem: string }>): void {
+    vscode.postMessage({ type: 'importPrivateKey', ...event.detail });
+  }
+
+  function handlePassphraseSubmit(event: CustomEvent<string>): void {
+    if (!passphraseRequest) return;
+    const { requestId } = passphraseRequest;
+    passphraseRequest = null;
+    vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: event.detail });
+  }
+
+  function handlePassphraseCancel(): void {
+    if (!passphraseRequest) return;
+    const { requestId } = passphraseRequest;
+    passphraseRequest = null;
+    vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: null });
   }
 
   function selectCert(index: number): void {
@@ -157,16 +201,28 @@
       <CertificateView
         cert={activeCert}
         chainPems={displayChain.map(c => c.raw)}
+        certIndex={activeIndex}
+        importedPrivateKey={importedKeys.get(activeIndex)}
+        importKeyError={importKeyErrors.get(activeIndex)}
         {loadingUrls}
         topOffset={chainNavHeight}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
         on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
+        on:importPrivateKey={handleImportPrivateKey}
       />
     {/key}
   {/if}
 </main>
+
+{#if passphraseRequest}
+  <PassphraseDialog
+    fileName={passphraseRequest.fileName}
+    on:submit={handlePassphraseSubmit}
+    on:cancel={handlePassphraseCancel}
+  />
+{/if}
 
 <style>
   :global(*) { box-sizing: border-box; }

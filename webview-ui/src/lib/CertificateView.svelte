@@ -13,8 +13,11 @@
   export let topOffset = 0;
   /** PEM strings for all certs in the current display chain (EE first, then CAs). */
   export let chainPems: string[] = [];
+  export let certIndex: number = 0;
+  export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
+  export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -96,6 +99,8 @@
 
   let spkiPemOpen = false;
   let privKeyPemOpen = false;
+
+  $: effectivePrivateKey = cert.privateKey ?? importedPrivateKey;
 </script>
 
 <div class="cert-view">
@@ -221,6 +226,9 @@
             <span class="fh-label">SPKI (Public Key)</span>
           </span>
           <div class="key-btn-row">
+            {#if !effectivePrivateKey}
+              <button class="copy-btn import-key-btn" on:click|stopPropagation={() => dispatch('importPrivateKey', { certIndex, spkiPem: cert.publicKey.spkiPem })} title="Import matching private key">🔑 Import Key</button>
+            {/if}
             <button class="copy-btn" on:click|stopPropagation={() => copy(cert.publicKey.spki)} title="Copy SPKI as hex">⧉ Copy Hex</button>
             <button class="copy-btn" on:click|stopPropagation={() => copy(cert.publicKey.spkiPem)} title="Copy SPKI as PEM">⧉ Copy PEM</button>
           </div>
@@ -231,15 +239,18 @@
       </div>
     </SectionCard>
 
-    <!-- Private Key (present only when loaded from a P12 that included it) -->
-    {#if cert.privateKey}
+    <!-- Private Key (present when loaded from P12 or imported) -->
+    {#if effectivePrivateKey}
       <SectionCard title="Private Key" icon="🗝️">
-        <FieldRow label="Algorithm" value={cert.privateKey.algorithm} />
-        {#if cert.privateKey.keySize}
-          <FieldRow label="Key Size" value="{cert.privateKey.keySize} bits" />
+        {#if importKeyError}
+          <div class="key-import-error">⚠️ {importKeyError}</div>
         {/if}
-        {#if cert.privateKey.namedCurve}
-          <FieldRow label="Named Curve" value={cert.privateKey.namedCurve} />
+        <FieldRow label="Algorithm" value={effectivePrivateKey.algorithm} />
+        {#if effectivePrivateKey.keySize}
+          <FieldRow label="Key Size" value="{effectivePrivateKey.keySize} bits" />
+        {/if}
+        {#if effectivePrivateKey.namedCurve}
+          <FieldRow label="Named Curve" value={effectivePrivateKey.namedCurve} />
         {/if}
         <div class="key-pem-block">
           <button class="key-pem-toolbar" on:click={() => privKeyPemOpen = !privKeyPemOpen} aria-expanded={privKeyPemOpen}>
@@ -248,14 +259,18 @@
               <span class="fh-label">PKCS#8 (Private Key)</span>
             </span>
             <div class="key-btn-row">
-              <button class="copy-btn" on:click|stopPropagation={() => copy(cert.privateKey?.hex ?? '')} title="Copy PKCS#8 as hex">⧉ Copy Hex</button>
-              <button class="copy-btn" on:click|stopPropagation={() => copy(cert.privateKey?.pem ?? '')} title="Copy PKCS#8 as PEM">⧉ Copy PEM</button>
+              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.hex ?? '')} title="Copy PKCS#8 as hex">⧉ Copy Hex</button>
+              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.pem ?? '')} title="Copy PKCS#8 as PEM">⧉ Copy PEM</button>
             </div>
           </button>
           {#if privKeyPemOpen}
-            <pre class="raw-pem private-key-pem">{cert.privateKey.pem}</pre>
+            <pre class="raw-pem private-key-pem">{effectivePrivateKey.pem}</pre>
           {/if}
         </div>
+      </SectionCard>
+    {:else if importKeyError}
+      <SectionCard title="Private Key" icon="🗝️">
+        <div class="key-import-error">⚠️ {importKeyError}</div>
       </SectionCard>
     {/if}
 
@@ -512,18 +527,6 @@
     gap: 0.3rem;
   }
 
-  .expand-pem-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    color: inherit;
-    font-family: var(--vscode-font-family);
-  }
-
   .pem-chevron {
     font-size: 0.95rem;
     color: var(--vscode-descriptionForeground, #888);
@@ -564,6 +567,25 @@
   .private-key-pem {
     border-color: rgba(250, 179, 135, 0.3);
     background: rgba(250, 179, 135, 0.05);
+  }
+
+  .key-import-error {
+    margin: 0.3rem 0.7rem 0.1rem;
+    padding: 0.4rem 0.65rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    color: #fab387;
+    background: rgba(250, 179, 135, 0.1);
+    border: 1px solid rgba(250, 179, 135, 0.3);
+  }
+
+  .import-key-btn {
+    background: rgba(137, 220, 235, 0.1);
+    border-color: rgba(137, 220, 235, 0.3);
+    color: #89dceb;
+  }
+  .import-key-btn:hover {
+    background: rgba(137, 220, 235, 0.18);
   }
 
   .hex-dump {
