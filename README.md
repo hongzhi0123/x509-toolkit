@@ -2,6 +2,8 @@
 
 A VS Code extension for viewing, analyzing, and creating X.509 certificates with a rich Svelte-powered webview UI.
 
+![Certificate Viewer](images/cert_viewer.png)
+
 ## Features
 
 ### Viewing Certificates
