@@ -15,6 +15,14 @@ export interface DistinguishedName {
   email?: string;
   domainComponent?: string;
   userId?: string;
+  jurisdictionCountry?: string;
+  jurisdictionState?: string;
+  jurisdictionLocality?: string;
+  postalCode?: string;
+  streetAddress?: string;
+  organizationIdentifier?: string;
+  serialNumber?: string;
+  businessCategory?: string;
 }
 
 export interface Validity {

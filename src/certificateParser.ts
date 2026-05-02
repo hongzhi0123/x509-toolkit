@@ -11,6 +11,17 @@ import {
   CRLDistributionPointsExtension,
   AuthorityInfoAccessExtension,
 } from '@peculiar/x509';
+import { 
+  id_ce_authorityKeyIdentifier, 
+  id_ce_basicConstraints, 
+  id_ce_extKeyUsage, 
+  id_ce_keyUsage, 
+  id_ce_subjectAltName, 
+  id_ce_subjectKeyIdentifier, 
+  id_pe_authorityInfoAccess,
+  id_ce_cRLDistributionPoints
+} from '@peculiar/asn1-x509';
+import { id_pe_qcStatements } from '@peculiar/asn1-x509-qualified';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 import type { CertificateData, CertExtension, PublicKeyInfo } from './types';
 import { bufToHex, parseDNString } from './certUtils';
@@ -39,7 +50,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
     };
     try {
       switch (ext.type) {
-        case '2.5.29.17': { // SAN
+        case id_ce_subjectAltName: { // SAN
           const san = cert.getExtension(SubjectAlternativeNameExtension);
           if (san) {
             item.value = san.names.items
@@ -48,7 +59,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '2.5.29.19': { // Basic Constraints
+        case id_ce_basicConstraints: { // Basic Constraints
           const bc = cert.getExtension(BasicConstraintsExtension);
           if (bc) {
             item.value = `CA: ${bc.ca}`;
@@ -56,7 +67,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '2.5.29.15': { // Key Usage
+        case id_ce_keyUsage: { // Key Usage
           const ku = cert.getExtension(KeyUsagesExtension);
           if (ku) {
             const usages: string[] = [];
@@ -73,19 +84,19 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '2.5.29.37': { // Extended Key Usage
+        case id_ce_extKeyUsage: { // Extended Key Usage
           const eku = cert.getExtension(ExtendedKeyUsageExtension);
           if (eku) {
             item.value = eku.usages.map(oid => EKU_NAMES[String(oid)] ?? String(oid)).join('\n');
           }
           break;
         }
-        case '2.5.29.14': { // Subject Key Identifier
+        case id_ce_subjectKeyIdentifier: { // Subject Key Identifier
           const ski = cert.getExtension(SubjectKeyIdentifierExtension);
           if (ski) item.value = ski.keyId;
           break;
         }
-        case '2.5.29.35': { // Authority Key Identifier
+        case id_ce_authorityKeyIdentifier: { // Authority Key Identifier
           const aki = cert.getExtension(AuthorityKeyIdentifierExtension);
           if (aki) {
             const parts: string[] = [];
@@ -95,7 +106,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '2.5.29.31': { // CRL Distribution Points
+        case id_ce_cRLDistributionPoints: { // CRL Distribution Points
           const cdp = cert.getExtension(CRLDistributionPointsExtension);
           if (cdp) {
             const urls: string[] = [];
@@ -112,7 +123,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '1.3.6.1.5.5.7.1.1': { // Authority Information Access
+        case id_pe_authorityInfoAccess: { // Authority Information Access
           const aia = cert.getExtension(AuthorityInfoAccessExtension);
           if (aia) {
             const parts: string[] = [];
@@ -125,7 +136,7 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           }
           break;
         }
-        case '1.3.6.1.5.5.7.1.3': { // QC Statements (ETSI EN 319 412-5)
+        case id_pe_qcStatements: { // QC Statements (ETSI EN 319 412-5)
           item.value = parseQcStatements(ext.rawData);
           break;
         }

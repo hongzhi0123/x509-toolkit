@@ -95,6 +95,21 @@ describe('parseDNString', () => {
     expect(dn.locality).toBe('Munich');
   });
 
+  it('parse a typical qwac certificate subject DN', () => {
+    const dn = parseDNString('C=IT, O=ACME Corp., CN=*.acme.com, L=Roma, 1.3.6.1.4.1.311.60.2.1.3=IT, 2.5.4.17=00184, 2.5.4.15=Private Organization, 2.5.4.9=Via dei Prefetti 10, 2.5.4.97=PSDIT-AGCM-17934661004, 2.5.4.5=35729, 1.3.6.1.4.1.311.60.2.1.1=Roma, 1.3.6.1.4.1.311.60.2.1.2=Latium, ST=Latium');
+    expect(dn.country).toBe('IT');
+    expect(dn.organization).toBe('ACME Corp.');
+    expect(dn.businessCategory).toBe('Private Organization');
+    expect(dn.locality).toBe('Roma');
+    expect(dn.jurisdictionCountry).toBe('IT');
+    expect(dn.postalCode).toBe('00184');
+    expect(dn.streetAddress).toBe('Via dei Prefetti 10');
+    expect(dn.organizationIdentifier).toBe('PSDIT-AGCM-17934661004');
+    expect(dn.serialNumber).toBe('35729');
+    expect(dn.jurisdictionLocality).toBe('Roma');
+    expect(dn.jurisdictionState).toBe('Latium');
+  });
+
   it('trims whitespace around keys and values', () => {
     const dn = parseDNString('  CN  =  hello world  ,  O  =  Org  ');
     expect(dn.commonName).toBe('hello world');

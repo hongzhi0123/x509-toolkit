@@ -47,18 +47,16 @@
     });
   }
 
+  function camelToLabel(key: string): string {
+    return key
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, c => c.toUpperCase());
+  }
+
   function dnFields(dn: DistinguishedName): [string, string][] {
-    const rows: [string, string][] = [];
-    if (dn.commonName)         rows.push(['Common Name',         dn.commonName]);
-    if (dn.organization)       rows.push(['Organization',        dn.organization]);
-    if (dn.organizationalUnit) rows.push(['Org. Unit',           dn.organizationalUnit]);
-    if (dn.country)            rows.push(['Country',             dn.country]);
-    if (dn.state)              rows.push(['State / Province',    dn.state]);
-    if (dn.locality)           rows.push(['Locality',            dn.locality]);
-    if (dn.email)              rows.push(['Email',               dn.email]);
-    if (dn.domainComponent)    rows.push(['Domain Component',    dn.domainComponent]);
-    if (dn.userId)             rows.push(['User ID',             dn.userId]);
-    return rows;
+    return (Object.entries(dn) as [string, string][])
+      .filter(([key, value]) => key !== 'raw' && value)
+      .map(([key, value]) => [camelToLabel(key), value]);
   }
 
   function validityStatus(v: { isExpired: boolean; daysRemaining: number }): string {

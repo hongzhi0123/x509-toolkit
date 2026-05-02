@@ -1,4 +1,6 @@
+
 import type { DistinguishedName } from './types';
+import { DN_ATTR_NAMES } from './oidMaps';
 
 export function bufToHex(buf: ArrayBuffer | Uint8Array): string {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
@@ -28,6 +30,14 @@ export function parseDNString(dn: string): DistinguishedName {
       case 'EMAILADDRESS': result.email = val; break;
       case 'DC':           result.domainComponent = val; break;
       case 'UID':          result.userId = val; break;
+      default:
+        // If the key is an OID, map to human-readable name if known
+        if (DN_ATTR_NAMES[key]) {
+          // Convert to camelCase for property name
+          const prop = DN_ATTR_NAMES[key].replace(/[^a-zA-Z0-9]+(.)/g, (_, chr) => chr.toUpperCase()).replace(/^[A-Z]/, c => c.toLowerCase());
+          (result as any)[prop] = val;
+        }
+        break;
     }
   }
   return result;
