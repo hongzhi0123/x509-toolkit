@@ -26,7 +26,7 @@ import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 import type { CertificateData, CertExtension, PublicKeyInfo } from './types';
 import { bufToHex, parseDNString } from './certUtils';
 import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from './oidMaps';
-import { parseQcStatements } from './qcStatements';
+import { QcStatementsExtension } from './qcStatements';
 
 // ------------------------------------------------------------------
 // Bootstrap @peculiar/webcrypto as the WebCrypto provider for Node.js
@@ -137,7 +137,11 @@ function parseExtensions(cert: X509Certificate): CertExtension[] {
           break;
         }
         case id_pe_qcStatements: { // QC Statements (ETSI EN 319 412-5)
-          item.value = parseQcStatements(ext.rawData);
+          const qcExt = ext instanceof QcStatementsExtension
+            ? ext
+            : new QcStatementsExtension(ext.rawData);
+          const lines = qcExt.toTextLines();
+          item.value = lines.length > 0 ? lines.join('\n') : '(empty)';
           break;
         }
         default:

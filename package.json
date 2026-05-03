@@ -119,6 +119,7 @@
     "@peculiar/asn1-rsa": "^2.7.0",
     "@peculiar/asn1-x509-attr": "^2.7.0",
     "@peculiar/asn1-x509-qualified": "^2.7.0",
+    "@peculiar/asn1-x509-qualified-etsi": "^2.7.0",
     "@peculiar/webcrypto": "^1.4.5",
     "@peculiar/x509": "^1.9.7",
     "node-forge": "^1.4.0"
