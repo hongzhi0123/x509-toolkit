@@ -4,7 +4,7 @@
 
 import { AsnConvert } from '@peculiar/asn1-schema';
 import { Extension as AsnX509Extension } from '@peculiar/asn1-x509';
-import { Extension, ExtensionFactory } from '@peculiar/x509';
+import { Extension, ExtensionFactory, TextObject } from '@peculiar/x509';
 import {
   id_pe_qcStatements,
   QCStatements,
@@ -139,6 +139,52 @@ export class QcStatementsExtension extends Extension {
         // statements simply remain absent from the typed properties.
       }
     }
+  }
+
+  /** Returns a TextObject for use with the @peculiar/x509 TextConverter pipeline. */
+  toTextObject(): TextObject {
+    const obj = new TextObject(QcStatementsExtension.NAME);
+
+    if (this.compliance) {
+      obj['QcCompliance'] = 'Certificate conforms to EU eIDAS Regulation';
+    }
+    if (this.limitValue) {
+      const mv       = this.limitValue;
+      const currency = mv.currency.alphabetic ?? `ISO-4217 #${mv.currency.numeric}`;
+      const value    = mv.amount * Math.pow(10, mv.exponent);
+      obj['QcLimitValue'] = `${value.toLocaleString()} ${currency}`;
+    }
+    if (this.retentionPeriod !== undefined) {
+      obj['QcRetentionPeriod'] = `${this.retentionPeriod} year(s)`;
+    }
+    if (this.sscd) {
+      obj['QcSSCD'] = 'Private key stored on SSCD/QSCD';
+    }
+    if (this.pds) {
+      obj['QcPDS'] = this.pds.map(l => `[${l.language.toUpperCase()}] ${l.url}`).join(', ');
+    }
+    if (this.qcTypes) {
+      obj['QcType'] = this.qcTypes.map(oid => QC_TYPE_NAMES[oid] ?? oid).join(', ');
+    }
+    if (this.ccLegislation) {
+      obj['QcCClegislation'] = this.ccLegislation.join(', ');
+    }
+    if (this.psd2) {
+      obj['PSD2 Roles'] = this.psd2.rolesOfPSP
+        .map(r => PSD2_ROLE_NAMES[r.roleOfPspOid] ?? r.roleOfPspName)
+        .join(', ');
+      obj['PSD2 NCA'] = `${this.psd2.nCAName} (${this.psd2.nCAId})`;
+    }
+    if (this.syntaxV1 !== undefined) {
+      const id = this.syntaxV1.semanticsIdentifier;
+      obj['QcSyntax-v1'] = id ? (QC_SEMANTICS_NAMES[id] ?? id) : '(no semantics identifier)';
+    }
+    if (this.syntaxV2 !== undefined) {
+      const id = this.syntaxV2.semanticsIdentifier;
+      obj['QcSyntax-v2'] = id ? (QC_SEMANTICS_NAMES[id] ?? id) : '(no semantics identifier)';
+    }
+
+    return obj;
   }
 
   /** Returns one display line per present QC statement, in a stable order. */
