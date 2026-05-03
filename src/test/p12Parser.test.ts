@@ -1,4 +1,4 @@
-import { parseP12, createSelfSignedP12 } from '../p12Parser';
+import { parseP12, createSelfSignedP12 } from '../parsers/p12Parser';
 
 // RSA-2048 key generation is slow; allow up to 60 s for the whole suite.
 jest.setTimeout(60_000);

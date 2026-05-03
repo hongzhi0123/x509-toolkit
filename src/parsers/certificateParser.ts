@@ -23,9 +23,9 @@ import {
 } from '@peculiar/asn1-x509';
 import { id_pe_qcStatements } from '@peculiar/asn1-x509-qualified';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
-import type { CertificateData, CertExtension, PublicKeyInfo } from './types';
-import { bufToHex, parseDNString } from './certUtils';
-import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from './oidMaps';
+import type { CertificateData, CertExtension, PublicKeyInfo } from '../types/types';
+import { bufToHex, parseDNString } from '../utils/certUtils';
+import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from '../types/oidMaps';
 import { QcStatementsExtension } from './qcStatements';
 
 // ------------------------------------------------------------------

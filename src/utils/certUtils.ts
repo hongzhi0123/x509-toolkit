@@ -1,6 +1,6 @@
 
-import type { DistinguishedName } from './types';
-import { DN_ATTR_NAMES } from './oidMaps';
+import type { DistinguishedName } from '../types/types';
+import { DN_ATTR_NAMES } from '../types/oidMaps';
 
 export function bufToHex(buf: ArrayBuffer | Uint8Array): string {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);

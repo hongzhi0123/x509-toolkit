@@ -3,8 +3,8 @@ import * as forge from 'node-forge';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 import * as x509 from '@peculiar/x509';
 import { parseCertificate } from './certificateParser';
-import { bufToHex } from './certUtils';
-import type { CertificateData, CertCreateParams, PrivateKeyInfo } from './types';
+import { bufToHex } from '../utils/certUtils';
+import type { CertificateData, CertCreateParams, PrivateKeyInfo } from '../types/types';
 
 // Use @peculiar/webcrypto which delegates to Node.js crypto under the hood
 const webcrypto = new PeculiarCrypto();

@@ -1,4 +1,4 @@
-import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from '../oidMaps';
+import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from '../types/oidMaps';
 
 describe('EXT_NAMES', () => {
   const cases: [string, string][] = [

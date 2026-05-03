@@ -1,4 +1,4 @@
-import { parseQcStatements } from '../qcStatements';
+import { parseQcStatements } from '../parsers/qcStatements';
 
 // ---------------------------------------------------------------------------
 // Helpers to build minimal DER-encoded structures for testing

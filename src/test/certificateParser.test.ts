@@ -1,4 +1,4 @@
-import { parseCertificate, parsePEMChain } from '../certificateParser';
+import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
 import * as x509 from '@peculiar/x509';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
 

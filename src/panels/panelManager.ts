@@ -3,9 +3,9 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
-import { parseCertificate } from './certificateParser';
-import { createP12Buffer, loadAndValidatePrivateKey } from './p12Parser';
-import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from './types';
+import { parseCertificate } from '../parsers/certificateParser';
+import { createP12Buffer, loadAndValidatePrivateKey } from '../parsers/p12Parser';
+import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from '../types/types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 

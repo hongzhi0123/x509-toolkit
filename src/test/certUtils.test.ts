@@ -1,4 +1,4 @@
-import { bufToHex, parseDNString } from '../certUtils';
+import { bufToHex, parseDNString } from '../utils/certUtils';
 
 describe('bufToHex', () => {
   it('returns empty string for empty Uint8Array', () => {

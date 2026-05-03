@@ -29,7 +29,7 @@ import {
   QcEuRetentionPeriod,
   MonetaryValue
 } from '@peculiar/asn1-x509-qualified-etsi';
-import { derTLV } from './derUtils'; // used only in the backward-compat shim
+import { derTLV } from '../utils/derUtils'; // used only in the backward-compat shim
 
 // ── OID constants ─────────────────────────────────────────────────────────────
 // const id_etsi_qcs                 = '0.4.0.1862.1';

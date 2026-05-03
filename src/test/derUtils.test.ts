@@ -1,4 +1,4 @@
-import { derTLV, derOid, derInt, derStr } from '../derUtils';
+import { derTLV, derOid, derInt, derStr } from '../utils/derUtils';
 
 describe('derTLV', () => {
   it('parses a simple TLV at offset 0', () => {

@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { parseCertificate, parsePEMChain } from './certificateParser';
-import { parseP12, createSelfSignedP12 } from './p12Parser';
-import { openCreateCertPanel } from './createCertPanel';
+import { parseCertificate, parsePEMChain } from './parsers/certificateParser';
+import { parseP12, createSelfSignedP12 } from './parsers/p12Parser';
+import { openCreateCertPanel } from './panels/createCertPanel';
 import {
   getOrCreatePanel,
   sendLoading,
   sendCertificates,
   sendError,
   requestPassphraseFromWebview,
-} from './panelManager';
+} from './panels/panelManager';
 
 async function openP12File(
   filePath: string,

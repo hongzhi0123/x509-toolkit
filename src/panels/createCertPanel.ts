@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { parseCertificate } from './certificateParser';
-import { parseP12, generateCertificate } from './p12Parser';
+import { parseCertificate } from '../parsers/certificateParser';
+import { parseP12, generateCertificate } from '../parsers/p12Parser';
 import { getOrCreatePanel, sendLoading, sendCertificates } from './panelManager';
-import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg } from './types';
+import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg } from '../types/types';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
 
