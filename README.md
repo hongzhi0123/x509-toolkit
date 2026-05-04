@@ -47,17 +47,54 @@ You can supply a private key for any certificate in the viewer. The key is loade
 
 ### Create Certificate
 
-The **Create Certificate** command opens a dedicated form to generate a new key pair and certificate:
+The **Create Certificate** command opens a dedicated form to generate a new key pair and signed certificate or a CSR:
 
 - **Subject fields** — CN, O, OU, C, ST, L, Email.
 - **Subject Alternative Names** — DNS names and IP addresses (one per line).
 - **Key algorithm** — RSA-2048, RSA-4096, EC P-256, EC P-384, or EC P-521.
-- **Validity period** — Configurable number of days.
+- **Validity period** — Configurable number of days (not used in CSR mode).
 - **CA certificate** — Optionally mark the certificate as a CA and set the path-length constraint.
 - **Key Usage** — Digital Signature, Key Encipherment, Data Encipherment, Key Cert Sign, CRL Sign; defaults adjust automatically when CA mode or an EC key is selected.
 - **Extended Key Usage** — Server Authentication, Client Authentication, Code Signing, Email Protection.
-- **Signing mode** — *Self-signed* or *CA-signed*. For CA-signed certificates, select a CA certificate and its private key from disk (passphrase-protected keys are supported).
-- **P12 output** — The generated key pair and certificate are saved as a PKCS#12 file with an optional password. The file is then opened immediately in the certificate viewer.
+- **Signing mode** — *Self-signed*, *CA-signed*, or *CSR*. For CA-signed certificates, select a CA certificate and its private key from disk (passphrase-protected keys are supported).
+- **P12 output** — For self-signed and CA-signed modes, the generated key pair and certificate are saved as a PKCS#12 file with an optional password. The file is then opened immediately in the certificate viewer.
+
+### Create a CSR (Certificate Signing Request)
+
+Choose **CSR** as the signing mode in the Create Certificate form to generate a key pair and a PKCS#10 CSR instead of a complete certificate:
+
+- Fill in the subject fields, SANs, key algorithm, key usage, and EKU as usual.
+- Optionally set a password to encrypt the private key PEM file.
+- After generation, a results screen shows the CSR PEM and lets you:
+  - **Copy** the PEM to the clipboard.
+  - **Save CSR (.csr)** — write the PEM to disk.
+  - **Save Private Key (.key)** — save the private key while it is still in memory.
+- The CSR is also sent to the certificate viewer panel (see *View CSR* below).
+
+> **Important:** The private key is held in memory only for the duration of the session. Save it before closing the panel or opening another file.
+
+### View CSR
+
+When a CSR is loaded (either generated via *Create Certificate* or opened from a `.csr` / `.req` file), the viewer panel shows a dedicated CSR view:
+
+- A yellow **CSR** badge and subtitle ("not yet signed") distinguish it from a regular certificate.
+- **Subject** — all DN fields from the CSR.
+- **Public Key** — algorithm, key size or named curve, and signature algorithm.
+- **Requested Extensions** — any extensions embedded in the CSR (e.g. SAN, Key Usage, EKU).
+- **Raw PEM** — copy to clipboard or save as a `.csr` file.
+- **Private Key** — if the CSR was just generated, the private key is shown here with a *Save Private Key…* button and a warning that it will be lost when the panel is closed.
+
+### Sign a CSR
+
+From the CSR viewer, click **✍ Sign this CSR…** to issue a certificate from the CSR using a local CA:
+
+1. Select the CA certificate file (PEM or DER).
+2. Select the CA private key file (PEM; passphrase-protected keys are supported).
+3. Optionally select the requester's private key file (needed to bundle the issued cert into a P12).
+4. Enter the certificate validity in days.
+5. Enter a P12 password (leave empty for no encryption).
+
+The signed certificate and private key are saved as a PKCS#12 file, which is then opened immediately in the certificate viewer.
 
 ### UI
 
@@ -83,6 +120,7 @@ The **Show Certificate from Selection** command is also available in the editor 
 | DER (binary) | `.der`, `.cer` | Single certificate |
 | PKCS#7 | `.p7b`, `.p7c` | Certificate bundle |
 | PKCS#12 / PFX | `.p12`, `.pfx` | Keystore; supports password-protected files |
+| PKCS#10 CSR | `.csr`, `.req` | Certificate Signing Request (PEM or DER) |
 | Editor selection | — | PEM text selected in any open file |
 
 ## Tech Stack
