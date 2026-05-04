@@ -15,233 +15,236 @@ let pendingCsrPem: string | undefined;
 let pendingCsrKeyPem: string | undefined;
 
 export function openCreateCertPanel(
-  extensionUri: vscode.Uri,
-  context: vscode.ExtensionContext,
-): void {
-  if (createCertPanelRef) {
-    createCertPanelRef.reveal(vscode.ViewColumn.One, false);
-    return;
-  }
+  context: vscode.ExtensionContext
+): () => void {
+  return () => {
+    var extensionUri: vscode.Uri = context.extensionUri;
 
-  const panel = vscode.window.createWebviewPanel(
-    'x509CreateCert',
-    'Create Certificate',
-    { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-    {
-      enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')],
-      retainContextWhenHidden: true,
-    },
-  );
+    if (createCertPanelRef) {
+      createCertPanelRef.reveal(vscode.ViewColumn.One, false);
+      return;
+    }
 
-  panel.webview.html = buildHtml(panel.webview, extensionUri);
+    const panel = vscode.window.createWebviewPanel(
+      'x509CreateCert',
+      'Create Certificate',
+      { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
+      {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')],
+        retainContextWhenHidden: true,
+      },
+    );
 
-  pendingCaCertPem = undefined;
-  pendingCaKeyPem  = undefined;
+    panel.webview.html = buildHtml(panel.webview, extensionUri);
 
-  panel.webview.onDidReceiveMessage(
-    async (msg: CreateCertToExtMsg) => {
-      switch (msg.type) {
+    pendingCaCertPem = undefined;
+    pendingCaKeyPem = undefined;
 
-        case 'ready':
-          break;
+    panel.webview.onDidReceiveMessage(
+      async (msg: CreateCertToExtMsg) => {
+        switch (msg.type) {
 
-        case 'pickCaCert': {
-          const uris = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            openLabel: 'Select CA Certificate',
-            title: 'Select CA Certificate (PEM or DER)',
-            filters: {
-              'Certificate Files': ['pem', 'crt', 'cer', 'der'],
-              'All Files': ['*'],
-            },
-          });
-          if (!uris?.[0]) break;
-          try {
-            const buf = fs.readFileSync(uris[0].fsPath);
-            const cert = await parseCertificate(buf);
-            pendingCaCertPem = cert.raw;
-            post(panel, { type: 'caCertLoaded', subject: cert.subject.raw });
-          } catch (e) {
-            post(panel, { type: 'error', message: `Failed to load CA cert: ${(e as Error).message}` });
-          }
-          break;
-        }
+          case 'ready':
+            break;
 
-        case 'pickCaKey': {
-          const uris = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            openLabel: 'Select CA Private Key',
-            title: 'Select CA Private Key (PEM)',
-            filters: {
-              'Private Key': ['pem', 'key', 'der', 'pk8'],
-              'All Files': ['*'],
-            },
-          });
-          if (!uris?.[0]) break;
-          try {
-            const raw = fs.readFileSync(uris[0].fsPath);
-            const isPem = raw.toString('utf8').trimStart().startsWith('-----');
-            const keyInput = isPem ? raw.toString('utf8') : raw;
-
-            let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
+          case 'pickCaCert': {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              openLabel: 'Select CA Certificate',
+              title: 'Select CA Certificate (PEM or DER)',
+              filters: {
+                'Certificate Files': ['pem', 'crt', 'cer', 'der'],
+                'All Files': ['*'],
+              },
+            });
+            if (!uris?.[0]) break;
             try {
-              // First attempt: no passphrase
-              nodeKey = crypto.createPrivateKey(keyInput);
-            } catch (firstErr) {
-              const msg = (firstErr as Error).message ?? '';
-              // If the error looks like an encryption/passphrase error, prompt the user
-              if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(msg)) {
-                const passphrase = await vscode.window.showInputBox({
-                  title: 'CA Private Key Passphrase',
-                  prompt: 'This private key is encrypted. Enter its passphrase.',
-                  password: true,
-                  ignoreFocusOut: true,
-                });
-                if (passphrase === undefined) break;  // user cancelled
-                nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
-              } else {
-                throw firstErr;
+              const buf = fs.readFileSync(uris[0].fsPath);
+              const cert = await parseCertificate(buf);
+              pendingCaCertPem = cert.raw;
+              post(panel, { type: 'caCertLoaded', subject: cert.subject.raw });
+            } catch (e) {
+              post(panel, { type: 'error', message: `Failed to load CA cert: ${(e as Error).message}` });
+            }
+            break;
+          }
+
+          case 'pickCaKey': {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              openLabel: 'Select CA Private Key',
+              title: 'Select CA Private Key (PEM)',
+              filters: {
+                'Private Key': ['pem', 'key', 'der', 'pk8'],
+                'All Files': ['*'],
+              },
+            });
+            if (!uris?.[0]) break;
+            try {
+              const raw = fs.readFileSync(uris[0].fsPath);
+              const isPem = raw.toString('utf8').trimStart().startsWith('-----');
+              const keyInput = isPem ? raw.toString('utf8') : raw;
+
+              let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
+              try {
+                // First attempt: no passphrase
+                nodeKey = crypto.createPrivateKey(keyInput);
+              } catch (firstErr) {
+                const msg = (firstErr as Error).message ?? '';
+                // If the error looks like an encryption/passphrase error, prompt the user
+                if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(msg)) {
+                  const passphrase = await vscode.window.showInputBox({
+                    title: 'CA Private Key Passphrase',
+                    prompt: 'This private key is encrypted. Enter its passphrase.',
+                    password: true,
+                    ignoreFocusOut: true,
+                  });
+                  if (passphrase === undefined) break;  // user cancelled
+                  nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
+                } else {
+                  throw firstErr;
+                }
               }
+
+              const details = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
+              const keyType = nodeKey.asymmetricKeyType ?? 'unknown';
+              const desc =
+                details.modulusLength ? `RSA-${details.modulusLength as number}` :
+                  details.namedCurve ? `EC ${details.namedCurve as string}` :
+                    keyType.toUpperCase();
+
+              // Store the key as unencrypted PKCS#8 PEM so generateCertificate can load it
+              pendingCaKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+              post(panel, { type: 'caKeyLoaded', description: desc });
+            } catch (e) {
+              post(panel, { type: 'error', message: `Failed to load CA key: ${(e as Error).message}` });
             }
-
-            const details = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
-            const keyType = nodeKey.asymmetricKeyType ?? 'unknown';
-            const desc =
-              details.modulusLength ? `RSA-${details.modulusLength as number}` :
-              details.namedCurve   ? `EC ${details.namedCurve as string}` :
-              keyType.toUpperCase();
-
-            // Store the key as unencrypted PKCS#8 PEM so generateCertificate can load it
-            pendingCaKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
-            post(panel, { type: 'caKeyLoaded', description: desc });
-          } catch (e) {
-            post(panel, { type: 'error', message: `Failed to load CA key: ${(e as Error).message}` });
-          }
-          break;
-        }
-
-        case 'generate': {
-          const params: CertCreateParams = msg.params;
-          post(panel, { type: 'generating' });
-          let p12Buf: Buffer;
-          try {
-            p12Buf = await generateCertificate(
-              params,
-              params.signingMode === 'ca-signed' ? pendingCaCertPem : undefined,
-              params.signingMode === 'ca-signed' ? pendingCaKeyPem  : undefined,
-            );
-          } catch (e) {
-            post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
             break;
           }
 
-          // Ask where to save
-          const safeName = (params.cn || 'certificate')
-            .replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
-          const saveUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(`${safeName}.p12`),
-            filters: { 'PKCS#12': ['p12', 'pfx'], 'All Files': ['*'] },
-            saveLabel: 'Save Certificate',
-            title: 'Save Generated Certificate as P12',
-          });
-          if (!saveUri) {
-            post(panel, { type: 'done' });
-            break;
-          }
-          fs.writeFileSync(saveUri.fsPath, p12Buf);
-          vscode.window.showInformationMessage(`Certificate saved to ${saveUri.fsPath}`);
-
-          // Close form, show cert in viewer
-          panel.dispose();
-          const viewerPanel = getOrCreatePanel(extensionUri, context);
-          sendLoading(viewerPanel);
-          try {
-            const certs = await parseP12(p12Buf, params.password);
-            sendCertificates(viewerPanel, certs, 0);
-          } catch {
-            // viewer will show the error; the file is saved successfully already
-          }
-          break;
-        }
-
-        case 'cancel':
-          panel.dispose();
-          break;
-
-        case 'generateCsr': {
-          const { params, keyPassword } = msg;
-          post(panel, { type: 'generating' });
-          try {
-            const { csrPem, privateKeyPem } = await generateCsr(params);
-            // Optionally encrypt the private key with the user-supplied password
-            if (keyPassword) {
-              const nodeKey = crypto.createPrivateKey(privateKeyPem);
-              const encPem = nodeKey.export({
-                type: 'pkcs8', format: 'pem',
-                cipher: 'aes-256-cbc', passphrase: keyPassword,
-              }) as string;
-              pendingCsrKeyPem = encPem;
-            } else {
-              pendingCsrKeyPem = privateKeyPem;
-            }
-            pendingCsrPem = csrPem;
-
-            // Show the CSR in the viewer panel (with key stored in memory) and close this panel
+          case 'generate': {
+            const params: CertCreateParams = msg.params;
+            post(panel, { type: 'generating' });
+            let p12Buf: Buffer;
             try {
-              const viewerPanel = getOrCreatePanel(extensionUri, context);
-              const csrData = await parseCsr(csrPem);
-              sendCsr(viewerPanel, csrData, pendingCsrKeyPem);
-            } catch { /* non-fatal: viewer key/CSR still work */ }
+              p12Buf = await generateCertificate(
+                params,
+                params.signingMode === 'ca-signed' ? pendingCaCertPem : undefined,
+                params.signingMode === 'ca-signed' ? pendingCaKeyPem : undefined,
+              );
+            } catch (e) {
+              post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+              break;
+            }
+
+            // Ask where to save
+            const safeName = (params.cn || 'certificate')
+              .replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+            const saveUri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(`${safeName}.p12`),
+              filters: { 'PKCS#12': ['p12', 'pfx'], 'All Files': ['*'] },
+              saveLabel: 'Save Certificate',
+              title: 'Save Generated Certificate as P12',
+            });
+            if (!saveUri) {
+              post(panel, { type: 'done' });
+              break;
+            }
+            fs.writeFileSync(saveUri.fsPath, p12Buf);
+            vscode.window.showInformationMessage(`Certificate saved to ${saveUri.fsPath}`);
+
+            // Close form, show cert in viewer
             panel.dispose();
-          } catch (e) {
-            post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+            const viewerPanel = getOrCreatePanel(extensionUri, context);
+            sendLoading(viewerPanel);
+            try {
+              const certs = await parseP12(p12Buf, params.password);
+              sendCertificates(viewerPanel, certs, 0);
+            } catch {
+              // viewer will show the error; the file is saved successfully already
+            }
+            break;
           }
-          break;
+
+          case 'cancel':
+            panel.dispose();
+            break;
+
+          case 'generateCsr': {
+            const { params, keyPassword } = msg;
+            post(panel, { type: 'generating' });
+            try {
+              const { csrPem, privateKeyPem } = await generateCsr(params);
+              // Optionally encrypt the private key with the user-supplied password
+              if (keyPassword) {
+                const nodeKey = crypto.createPrivateKey(privateKeyPem);
+                const encPem = nodeKey.export({
+                  type: 'pkcs8', format: 'pem',
+                  cipher: 'aes-256-cbc', passphrase: keyPassword,
+                }) as string;
+                pendingCsrKeyPem = encPem;
+              } else {
+                pendingCsrKeyPem = privateKeyPem;
+              }
+              pendingCsrPem = csrPem;
+
+              // Show the CSR in the viewer panel (with key stored in memory) and close this panel
+              try {
+                const viewerPanel = getOrCreatePanel(extensionUri, context);
+                const csrData = await parseCsr(csrPem);
+                sendCsr(viewerPanel, csrData, pendingCsrKeyPem);
+              } catch { /* non-fatal: viewer key/CSR still work */ }
+              panel.dispose();
+            } catch (e) {
+              post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+            }
+            break;
+          }
+
+          case 'saveCsrFile': {
+            if (!pendingCsrPem) break;
+            const csrUri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file('request.csr'),
+              filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
+              saveLabel: 'Save CSR',
+              title: 'Save Certificate Signing Request',
+            });
+            if (!csrUri) break;
+            fs.writeFileSync(csrUri.fsPath, pendingCsrPem, 'utf8');
+            vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
+            break;
+          }
+
+          case 'savePrivateKey': {
+            if (!pendingCsrKeyPem) break;
+            const keyUri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file('private.key'),
+              filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+              saveLabel: 'Save Private Key',
+              title: 'Save Private Key',
+            });
+            if (!keyUri) break;
+            fs.writeFileSync(keyUri.fsPath, pendingCsrKeyPem, 'utf8');
+            vscode.window.showInformationMessage(`Private key saved to ${keyUri.fsPath}`);
+            break;
+          }
         }
+      },
+      undefined,
+      context.subscriptions,
+    );
 
-        case 'saveCsrFile': {
-          if (!pendingCsrPem) break;
-          const csrUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file('request.csr'),
-            filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
-            saveLabel: 'Save CSR',
-            title: 'Save Certificate Signing Request',
-          });
-          if (!csrUri) break;
-          fs.writeFileSync(csrUri.fsPath, pendingCsrPem, 'utf8');
-          vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
-          break;
-        }
+    panel.onDidDispose(() => {
+      createCertPanelRef = undefined;
+      pendingCaCertPem = undefined;
+      pendingCaKeyPem = undefined;
+      pendingCsrPem = undefined;
+      pendingCsrKeyPem = undefined;
+    }, null, context.subscriptions);
 
-        case 'savePrivateKey': {
-          if (!pendingCsrKeyPem) break;
-          const keyUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file('private.key'),
-            filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
-            saveLabel: 'Save Private Key',
-            title: 'Save Private Key',
-          });
-          if (!keyUri) break;
-          fs.writeFileSync(keyUri.fsPath, pendingCsrKeyPem, 'utf8');
-          vscode.window.showInformationMessage(`Private key saved to ${keyUri.fsPath}`);
-          break;
-        }
-      }
-    },
-    undefined,
-    context.subscriptions,
-  );
-
-  panel.onDidDispose(() => {
-    createCertPanelRef  = undefined;
-    pendingCaCertPem    = undefined;
-    pendingCaKeyPem     = undefined;
-    pendingCsrPem       = undefined;
-    pendingCsrKeyPem    = undefined;
-  }, null, context.subscriptions);
-
-  createCertPanelRef = panel;
+    createCertPanelRef = panel;
+  }
 }
 
 function post(panel: vscode.WebviewPanel, msg: ExtToCreateCertMsg): void {
