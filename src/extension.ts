@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { parseCertificate, parsePEMChain } from './parsers/certificateParser';
+import { parseCertificate, parsePEMChain, parseCsr } from './parsers/certificateParser';
 import { parseP12, createSelfSignedP12 } from './parsers/p12Parser';
 import { openCreateCertPanel } from './panels/createCertPanel';
 import {
   getOrCreatePanel,
   sendLoading,
   sendCertificates,
+  sendCsr,
   sendError,
   requestPassphraseFromWebview,
 } from './panels/panelManager';
@@ -58,22 +59,32 @@ export function activate(context: vscode.ExtensionContext): void {
       sendLoading(panel);
 
       try {
-        const chain = await parsePEMChain(selectedText);
-        sendCertificates(panel, chain, 0);
+        const text = selectedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+        if (
+          text.includes('-----BEGIN CERTIFICATE REQUEST-----') ||
+          text.includes('-----BEGIN NEW CERTIFICATE REQUEST-----')
+        ) {
+          const csrData = await parseCsr(text);
+          sendCsr(panel, csrData);
+        } else {
+          const chain = await parsePEMChain(text);
+          sendCertificates(panel, chain, 0);
+        }
       } catch (err: unknown) {
         sendError(panel, (err as Error).message ?? String(err));
       }
     })
   );
 
-  // Command: open certificate file (PEM, DER, P12/PFX)
+  // Command: open X.509 file (PEM, DER, P12/PFX, CSR)
   context.subscriptions.push(
     vscode.commands.registerCommand('x509toolkit.openFile', async () => {
       const uris = await vscode.window.showOpenDialog({
         canSelectMany: false,
         openLabel: 'Open Certificate',
         filters: {
-          'Certificate Files': ['pem', 'crt', 'cer', 'der', 'p7b', 'p7c', 'p12', 'pfx'],
+          'Certificate Files': ['pem', 'crt', 'cer', 'der', 'p7b', 'p7c', 'p12', 'pfx', 'csr', 'req'],
           'All Files': ['*'],
         },
       });
@@ -93,7 +104,18 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         const raw = fs.readFileSync(filePath);
-        const asText = raw.toString('utf8');
+        const asText = raw.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+        // Detect CSR by PEM header first, then fall back to file extension
+        if (
+          asText.includes('-----BEGIN CERTIFICATE REQUEST-----') ||
+          asText.includes('-----BEGIN NEW CERTIFICATE REQUEST-----') ||
+          ext === 'csr' || ext === 'req'
+        ) {
+          const csrData = await parseCsr(raw);
+          sendCsr(panel, csrData);
+          return;
+        }
 
         if (asText.includes('-----BEGIN CERTIFICATE-----')) {
           const chain = await parsePEMChain(asText);

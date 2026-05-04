@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { parseCertificate } from '../parsers/certificateParser';
-import { parseP12, generateCertificate } from '../parsers/p12Parser';
-import { getOrCreatePanel, sendLoading, sendCertificates } from './panelManager';
+import { parseCertificate, parseCsr } from '../parsers/certificateParser';
+import { parseP12, generateCertificate, generateCsr } from '../parsers/p12Parser';
+import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './panelManager';
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg } from '../types/types';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
@@ -11,6 +11,8 @@ let createCertPanelRef: vscode.WebviewPanel | undefined;
 // Held for the lifetime of the open panel
 let pendingCaCertPem: string | undefined;
 let pendingCaKeyPem: string | undefined;
+let pendingCsrPem: string | undefined;
+let pendingCsrKeyPem: string | undefined;
 
 export function openCreateCertPanel(
   extensionUri: vscode.Uri,
@@ -166,6 +168,65 @@ export function openCreateCertPanel(
         case 'cancel':
           panel.dispose();
           break;
+
+        case 'generateCsr': {
+          const { params, keyPassword } = msg;
+          post(panel, { type: 'generating' });
+          try {
+            const { csrPem, privateKeyPem } = await generateCsr(params);
+            // Optionally encrypt the private key with the user-supplied password
+            if (keyPassword) {
+              const nodeKey = crypto.createPrivateKey(privateKeyPem);
+              const encPem = nodeKey.export({
+                type: 'pkcs8', format: 'pem',
+                cipher: 'aes-256-cbc', passphrase: keyPassword,
+              }) as string;
+              pendingCsrKeyPem = encPem;
+            } else {
+              pendingCsrKeyPem = privateKeyPem;
+            }
+            pendingCsrPem = csrPem;
+
+            // Show the CSR in the viewer panel (with key stored in memory) and close this panel
+            try {
+              const viewerPanel = getOrCreatePanel(extensionUri, context);
+              const csrData = await parseCsr(csrPem);
+              sendCsr(viewerPanel, csrData, pendingCsrKeyPem);
+            } catch { /* non-fatal: viewer key/CSR still work */ }
+            panel.dispose();
+          } catch (e) {
+            post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+          }
+          break;
+        }
+
+        case 'saveCsrFile': {
+          if (!pendingCsrPem) break;
+          const csrUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file('request.csr'),
+            filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
+            saveLabel: 'Save CSR',
+            title: 'Save Certificate Signing Request',
+          });
+          if (!csrUri) break;
+          fs.writeFileSync(csrUri.fsPath, pendingCsrPem, 'utf8');
+          vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
+          break;
+        }
+
+        case 'savePrivateKey': {
+          if (!pendingCsrKeyPem) break;
+          const keyUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file('private.key'),
+            filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+            saveLabel: 'Save Private Key',
+            title: 'Save Private Key',
+          });
+          if (!keyUri) break;
+          fs.writeFileSync(keyUri.fsPath, pendingCsrKeyPem, 'utf8');
+          vscode.window.showInformationMessage(`Private key saved to ${keyUri.fsPath}`);
+          break;
+        }
       }
     },
     undefined,
@@ -176,6 +237,8 @@ export function openCreateCertPanel(
     createCertPanelRef  = undefined;
     pendingCaCertPem    = undefined;
     pendingCaKeyPem     = undefined;
+    pendingCsrPem       = undefined;
+    pendingCsrKeyPem    = undefined;
   }, null, context.subscriptions);
 
   createCertPanelRef = panel;

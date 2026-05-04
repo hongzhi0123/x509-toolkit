@@ -681,3 +681,138 @@ export async function generateCertificate(
     return buildP12FromRawDer(certDer, pkcs8Der, params.password);
   }
 }
+
+/**
+ * Generate a key pair and PKCS#10 Certificate Signing Request (CSR).
+ * The private key is returned as unencrypted PKCS#8 PEM; the caller is
+ * responsible for any at-rest encryption before persisting it.
+ */
+export async function generateCsr(
+  params: CertCreateParams,
+): Promise<{ csrPem: string; privateKeyPem: string }> {
+  const { keyGenAlg, sigAlg } = getAlgSpec(params.keyAlgorithm);
+
+  const keyPair = await webcrypto.subtle.generateKey(keyGenAlg, true, ['sign', 'verify']) as CryptoKeyPair;
+
+  // Build subject DN
+  const dnParts: string[] = [];
+  if (params.cn)    dnParts.push(`CN=${params.cn}`);
+  if (params.o)     dnParts.push(`O=${params.o}`);
+  if (params.ou)    dnParts.push(`OU=${params.ou}`);
+  if (params.c)     dnParts.push(`C=${params.c}`);
+  if (params.st)    dnParts.push(`ST=${params.st}`);
+  if (params.l)     dnParts.push(`L=${params.l}`);
+  if (params.email) dnParts.push(`E=${params.email}`);
+  const subjectStr = dnParts.join(', ');
+
+  // Build requested extensions
+  const extensions: x509.Extension[] = [];
+
+  const altNames: x509.GeneralName[] = [];
+  if (params.dnsNames) {
+    params.dnsNames.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+      .forEach(name => altNames.push(new x509.GeneralName('dns', name)));
+  }
+  if (params.ipAddresses) {
+    params.ipAddresses.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+      .forEach(ip => altNames.push(new x509.GeneralName('ip', ip)));
+  }
+  if (altNames.length > 0) {
+    extensions.push(new x509.SubjectAlternativeNameExtension(altNames));
+  }
+
+  let kuFlags = 0;
+  if (params.keyUsageDigitalSignature) kuFlags |= x509.KeyUsageFlags.digitalSignature;
+  if (params.keyUsageKeyEncipherment)  kuFlags |= x509.KeyUsageFlags.keyEncipherment;
+  if (params.keyUsageDataEncipherment) kuFlags |= x509.KeyUsageFlags.dataEncipherment;
+  if (params.keyUsageKeyCertSign)      kuFlags |= x509.KeyUsageFlags.keyCertSign;
+  if (params.keyUsageCRLSign)          kuFlags |= x509.KeyUsageFlags.cRLSign;
+  if (kuFlags) {
+    extensions.push(new x509.KeyUsagesExtension(kuFlags as x509.KeyUsageFlags, true));
+  }
+
+  const ekuOids: string[] = [];
+  if (params.ekuServerAuth)      ekuOids.push('1.3.6.1.5.5.7.3.1');
+  if (params.ekuClientAuth)      ekuOids.push('1.3.6.1.5.5.7.3.2');
+  if (params.ekuCodeSigning)     ekuOids.push('1.3.6.1.5.5.7.3.3');
+  if (params.ekuEmailProtection) ekuOids.push('1.3.6.1.5.5.7.3.4');
+  if (ekuOids.length > 0) {
+    extensions.push(new x509.ExtendedKeyUsageExtension(ekuOids));
+  }
+
+  const csr = await x509.Pkcs10CertificateRequestGenerator.create({
+    name: subjectStr,
+    keys: keyPair,
+    signingAlgorithm: sigAlg,
+    extensions: extensions.length > 0 ? extensions : undefined,
+  }, webcrypto);
+
+  const csrPem = csr.toString('pem');
+
+  const pkcs8Raw = await webcrypto.subtle.exportKey('pkcs8', keyPair.privateKey) as ArrayBuffer;
+  const pkcs8B64 = Buffer.from(pkcs8Raw).toString('base64').match(/.{1,64}/g)!.join('\n');
+  const privateKeyPem = `-----BEGIN PRIVATE KEY-----\n${pkcs8B64}\n-----END PRIVATE KEY-----\n`;
+
+  return { csrPem, privateKeyPem };
+}
+
+/**
+ * Sign a CSR with a CA key and return the result as a PKCS#12 buffer
+ * containing the signed certificate and the requester's private key.
+ */
+export async function signCsr(
+  csrPem: string,
+  caCertPem: string,
+  caPrivKeyPem: string,
+  requesterKeyPem: string,
+  validityDays: number,
+  p12Password: string,
+): Promise<Buffer> {
+  const csr     = new x509.Pkcs10CertificateRequest(csrPem);
+  const caCert  = new x509.X509Certificate(caCertPem);
+  const { key: signingKey, alg: signingAlg } = await importCaPrivateKey(caPrivKeyPem);
+
+  const serialBytes = crypto.randomBytes(16);
+  serialBytes[0] &= 0x7f;
+  const serialNumber = serialBytes.toString('hex');
+
+  const now      = new Date();
+  const notAfter = new Date(now.getTime() + validityDays * 86_400_000);
+
+  // Copy extensions requested in the CSR, then add infrastructure extensions
+  const extensions: x509.Extension[] = [];
+  if (csr.extensions) {
+    for (const ext of csr.extensions) {
+      // Skip BasicConstraints from the CSR — we always add our own below
+      if (ext.type !== '2.5.29.19') {
+        extensions.push(ext);
+      }
+    }
+  }
+  extensions.push(new x509.BasicConstraintsExtension(false, undefined, true));
+  extensions.push(await x509.SubjectKeyIdentifierExtension.create(csr.publicKey, false, webcrypto));
+  extensions.push(await x509.AuthorityKeyIdentifierExtension.create(caCert.publicKey, false, webcrypto));
+
+  const cert = await x509.X509CertificateGenerator.create({
+    serialNumber,
+    subject:          csr.subject,
+    issuer:           caCert.subject,
+    notBefore:        now,
+    notAfter,
+    signingAlgorithm: signingAlg,
+    publicKey:        csr.publicKey,
+    signingKey,
+    extensions,
+  }, webcrypto);
+
+  const certDer  = Buffer.from(cert.rawData);
+  const keyBuf   = Buffer.from(requesterKeyPem, 'utf8');
+  const nodeKey  = crypto.createPrivateKey(requesterKeyPem);
+  const pkcs8Der = nodeKey.export({ type: 'pkcs8', format: 'der' }) as Buffer;
+
+  if (nodeKey.asymmetricKeyType === 'rsa') {
+    return createP12Buffer([cert.toString('pem')], p12Password, keyBuf);
+  } else {
+    return buildP12FromRawDer(certDer, pkcs8Der, p12Password);
+  }
+}

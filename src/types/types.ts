@@ -90,6 +90,18 @@ export interface CertificateData {
   privateKey?: PrivateKeyInfo;
 }
 
+export interface CsrData {
+  subject: DistinguishedName;
+  publicKey: PublicKeyInfo;
+  signatureAlgorithm: string;
+  extensions: CertExtension[];
+  /** PEM-encoded PKCS#10 Certificate Signing Request */
+  raw: string;
+  /** Describes the associated private key (algorithm + encryption status); present only when the
+   *  key is held in extension-host memory — key material is never sent to the webview */
+  privateKeyDescription?: string;
+}
+
 // ─── Certificate generation ─────────────────────────────────────────────────
 
 export type KeyAlgorithm = 'RSA-2048' | 'RSA-4096' | 'EC-P256' | 'EC-P384' | 'EC-P521';
@@ -121,8 +133,8 @@ export interface CertCreateParams {
   ekuCodeSigning: boolean;
   ekuEmailProtection: boolean;
   // Signing
-  signingMode: 'self-signed' | 'ca-signed';
-  // P12 password
+  signingMode: 'self-signed' | 'ca-signed' | 'csr';
+  // P12 password (unused when signingMode === 'csr')
   password: string;
 }
 
@@ -131,6 +143,9 @@ export type CreateCertToExtMsg =
   | { type: 'pickCaCert' }
   | { type: 'pickCaKey' }
   | { type: 'generate'; params: CertCreateParams }
+  | { type: 'generateCsr'; params: CertCreateParams; keyPassword: string }
+  | { type: 'saveCsrFile' }
+  | { type: 'savePrivateKey' }
   | { type: 'cancel' };
 
 export type ExtToCreateCertMsg =
@@ -138,6 +153,7 @@ export type ExtToCreateCertMsg =
   | { type: 'caKeyLoaded'; description: string }
   | { type: 'generating' }
   | { type: 'done' }
+  | { type: 'csrReady'; csrPem: string }
   | { type: 'error'; message: string };
 
 // ─── Message protocol ────────────────────────────────────────────────────────
@@ -145,6 +161,7 @@ export type ExtToCreateCertMsg =
 export type ExtToWebviewMsg =
   | { type: 'loading' }
   | { type: 'certificate'; chain: CertificateData[]; activeIndex: number }
+  | { type: 'csr'; data: CsrData }
   | { type: 'error'; message: string }
   | { type: 'caIssuerCert'; cert: CertificateData; url: string }
   | { type: 'caIssuerError'; url: string; message: string }
@@ -161,5 +178,8 @@ export type WebviewToExtMsg =
   | { type: 'exportCert'; pem: string; suggestedName: string }
   | { type: 'createP12'; certPems: string[]; suggestedName: string; keyPem?: string }
   | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
+  | { type: 'signCsr'; csrPem: string }
+  | { type: 'saveCsrFile' }
+  | { type: 'savePrivateKey' }
   /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
   | { type: 'passphraseResponse'; requestId: string; passphrase: string | null };

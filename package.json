@@ -42,12 +42,12 @@
     "commands": [
       {
         "command": "x509toolkit.showFromSelection",
-        "title": "X.509 Toolkit: Show Certificate from Selection",
+        "title": "X.509 Toolkit: Show X.509 from Selection",
         "icon": "$(shield)"
       },
       {
         "command": "x509toolkit.openFile",
-        "title": "X.509 Toolkit: Open Certificate File",
+        "title": "X.509 Toolkit: Open X.509 File",
         "icon": "$(file-binary)"
       },
       {

@@ -4,10 +4,15 @@ import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { parseCertificate } from '../parsers/certificateParser';
-import { createP12Buffer, loadAndValidatePrivateKey } from '../parsers/p12Parser';
-import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg } from '../types/types';
+import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
+import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg } from '../types/types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
+
+// CSR PEM and private key held when a CSR is generated via Create Cert panel.
+// The key is NEVER sent to the webview; only a description string is passed.
+let pendingViewerCsrPem: string | undefined;
+let pendingViewerCsrKeyPem: string | undefined;
 
 // ------------------------------------------------------------------
 // Passphrase request bridge
@@ -293,19 +298,197 @@ export function getOrCreatePanel(
         fs.writeFileSync(saveUri.fsPath, p12Buf);
         const note = keyBuf ? ' (with private key)' : ' (certificates only)';
         vscode.window.showInformationMessage(`P12 saved to ${saveUri.fsPath}${note}`);
+      } else if (msg.type === 'signCsr') {
+        const { csrPem } = msg;
+
+        // Step 1 — CA certificate
+        const caCertUris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Select CA Certificate',
+          title: 'Sign CSR — Select CA Certificate (PEM or DER)',
+          filters: { 'Certificate Files': ['pem', 'crt', 'cer', 'der'], 'All Files': ['*'] },
+        });
+        if (!caCertUris?.[0]) return;
+        let caCertPem: string;
+        try {
+          const caBuf = fs.readFileSync(caCertUris[0].fsPath);
+          const caCert = await parseCertificate(caBuf);
+          caCertPem = caCert.raw;
+        } catch (e) {
+          vscode.window.showErrorMessage(`Failed to load CA certificate: ${(e as Error).message}`);
+          return;
+        }
+
+        // Step 2 — CA private key (with passphrase support)
+        const caKeyUris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Select CA Private Key',
+          title: 'Sign CSR — Select CA Private Key (PEM)',
+          filters: { 'Private Key': ['pem', 'key', 'der', 'pk8'], 'All Files': ['*'] },
+        });
+        if (!caKeyUris?.[0]) return;
+        let caKeyPem: string;
+        try {
+          const raw = fs.readFileSync(caKeyUris[0].fsPath);
+          const isPem = raw.toString('utf8').trimStart().startsWith('-----');
+          const keyInput = isPem ? raw.toString('utf8') : raw;
+          let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
+          try {
+            nodeKey = crypto.createPrivateKey(keyInput);
+          } catch (firstErr) {
+            const errMsg = (firstErr as Error).message ?? '';
+            if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(errMsg)) {
+              const passphrase = await vscode.window.showInputBox({
+                title: 'CA Private Key Passphrase',
+                prompt: 'This private key is encrypted. Enter its passphrase.',
+                password: true,
+                ignoreFocusOut: true,
+              });
+              if (passphrase === undefined) return;
+              nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
+            } else {
+              throw firstErr;
+            }
+          }
+          caKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+        } catch (e) {
+          vscode.window.showErrorMessage(`Failed to load CA key: ${(e as Error).message}`);
+          return;
+        }
+
+        // Step 3 — Requester's private key file
+        const reqKeyUris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Select Private Key',
+          title: 'Sign CSR — Select Your Private Key (saved when the CSR was created)',
+          filters: { 'Private Key': ['pem', 'key', 'der', 'pk8'], 'All Files': ['*'] },
+        });
+        if (!reqKeyUris?.[0]) return;
+        let requesterKeyPem: string;
+        try {
+          const raw = fs.readFileSync(reqKeyUris[0].fsPath);
+          const keyText = raw.toString('utf8').trim();
+          let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
+          try {
+            nodeKey = crypto.createPrivateKey(keyText);
+          } catch (firstErr) {
+            const errMsg = (firstErr as Error).message ?? '';
+            if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(errMsg)) {
+              const fileName = reqKeyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key';
+              const passphrase = await requestPassphraseFromWebview(panel, fileName, {
+                title: 'Private Key Passphrase',
+                description: `${fileName} is password-protected. Enter its passphrase.`,
+                buttonLabel: 'Unlock',
+              });
+              if (passphrase === null) return;
+              nodeKey = crypto.createPrivateKey({ key: keyText, passphrase });
+            } else {
+              throw firstErr;
+            }
+          }
+          requesterKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+        } catch (e) {
+          vscode.window.showErrorMessage(`Failed to load private key: ${(e as Error).message}`);
+          return;
+        }
+
+        // Step 4 — Validity days
+        const daysStr = await vscode.window.showInputBox({
+          title: 'Sign CSR — Validity',
+          prompt: 'How many days should the signed certificate be valid?',
+          value: '365',
+          ignoreFocusOut: true,
+          validateInput: v => /^\d+$/.test(v) && +v > 0 ? null : 'Enter a positive integer',
+        });
+        if (daysStr === undefined) return;
+
+        // Step 5 — P12 password
+        const p12Passphrase = await requestPassphraseFromWebview(
+          panel,
+          'signed-certificate.p12',
+          {
+            title: 'Set P12 Password',
+            description: 'Enter a password to protect the private key in the output P12 file. Leave empty for no password.',
+            buttonLabel: 'Set Password',
+            requireConfirm: true,
+          },
+        );
+        if (p12Passphrase === null) return;
+
+        // Sign
+        let p12Buf: Buffer;
+        try {
+          p12Buf = await signCsr(csrPem, caCertPem, caKeyPem, requesterKeyPem, parseInt(daysStr, 10), p12Passphrase);
+        } catch (e) {
+          vscode.window.showErrorMessage(`Signing failed: ${(e as Error).message}`);
+          return;
+        }
+
+        // Save
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file('signed-certificate.p12'),
+          filters: { 'PKCS#12 / PFX': ['p12', 'pfx'] },
+          saveLabel: 'Save Signed Certificate',
+          title: 'Save Signed Certificate as P12',
+        });
+        if (!saveUri) return;
+        fs.writeFileSync(saveUri.fsPath, p12Buf);
+        vscode.window.showInformationMessage(`Signed certificate saved to ${saveUri.fsPath}`);
+
+        // Show in viewer
+        const { parseP12 } = await import('../parsers/p12Parser');
+        sendLoading(panel);
+        try {
+          const certs = await parseP12(p12Buf, p12Passphrase);
+          sendCertificates(panel, certs, 0);
+        } catch { /* file is saved; viewer just stays on loading */ }
+      } else if (msg.type === 'savePrivateKey') {
+        if (!pendingViewerCsrKeyPem) {
+          vscode.window.showWarningMessage('No private key in memory. The key is only available immediately after CSR generation.');
+          return;
+        }
+        const keyUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file('private.key'),
+          filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+          saveLabel: 'Save Private Key',
+          title: 'Save Private Key',
+        });
+        if (!keyUri) return;
+        fs.writeFileSync(keyUri.fsPath, pendingViewerCsrKeyPem, 'utf8');
+        vscode.window.showInformationMessage(`Private key saved to ${keyUri.fsPath}`);
+      } else if (msg.type === 'saveCsrFile') {
+        if (!pendingViewerCsrPem) {
+          vscode.window.showWarningMessage('No CSR in memory.');
+          return;
+        }
+        const csrUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file('request.csr'),
+          filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
+          saveLabel: 'Save CSR',
+          title: 'Save Certificate Signing Request',
+        });
+        if (!csrUri) return;
+        fs.writeFileSync(csrUri.fsPath, pendingViewerCsrPem, 'utf8');
+        vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
       }
     },
     undefined,
     context.subscriptions
   );
 
-  panel.onDidDispose(() => { currentPanel = undefined; }, null, context.subscriptions);
+  panel.onDidDispose(() => {
+    currentPanel = undefined;
+    pendingViewerCsrPem = undefined;
+    pendingViewerCsrKeyPem = undefined;
+  }, null, context.subscriptions);
 
   currentPanel = panel;
   return panel;
 }
 
 export function sendLoading(panel: vscode.WebviewPanel): void {
+  pendingViewerCsrPem = undefined;
+  pendingViewerCsrKeyPem = undefined;
   const msg: ExtToWebviewMsg = { type: 'loading' };
   panel.webview.postMessage(msg);
 }
@@ -315,7 +498,23 @@ export function sendCertificates(
   chain: CertificateData[],
   activeIndex = 0
 ): void {
+  pendingViewerCsrPem = undefined;
+  pendingViewerCsrKeyPem = undefined;
   const msg: ExtToWebviewMsg = { type: 'certificate', chain, activeIndex };
+  panel.webview.postMessage(msg);
+}
+
+export function sendCsr(panel: vscode.WebviewPanel, data: CsrData, keyPem?: string): void {
+  pendingViewerCsrKeyPem = keyPem;
+  pendingViewerCsrPem = data.raw;
+  let csrData = data;
+  if (keyPem) {
+    const isEncrypted = keyPem.includes('ENCRYPTED');
+    const { algorithm, keySize, namedCurve } = data.publicKey;
+    const algDesc = keySize ? `${algorithm}-${keySize}` : namedCurve ? `${algorithm} ${namedCurve}` : algorithm;
+    csrData = { ...data, privateKeyDescription: isEncrypted ? `${algDesc} (encrypted)` : algDesc };
+  }
+  const msg: ExtToWebviewMsg = { type: 'csr', data: csrData };
   panel.webview.postMessage(msg);
 }
 

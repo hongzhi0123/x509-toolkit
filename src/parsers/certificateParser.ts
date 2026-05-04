@@ -1,5 +1,6 @@
 import {
   X509Certificate,
+  Pkcs10CertificateRequest,
   cryptoProvider,
   SubjectAlternativeNameExtension,
   BasicConstraintsExtension,
@@ -24,7 +25,7 @@ import {
 } from '@peculiar/asn1-x509';
 import { id_pe_qcStatements } from '@peculiar/asn1-x509-qualified';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
-import type { CertificateData, CertExtension, PublicKeyInfo } from '../types/types';
+import type { CertificateData, CsrData, CertExtension, PublicKeyInfo } from '../types/types';
 import { bufToHex, parseDNString } from '../utils/certUtils';
 import { EXT_NAMES, EKU_NAMES, SIG_ALG_NAMES } from '../types/oidMaps';
 import { QcStatementsExtension } from './qcStatements';
@@ -264,4 +265,112 @@ export async function parsePEMChain(pem: string): Promise<CertificateData[]> {
   const blocks = pem.match(regex);
   if (!blocks?.length) throw new Error('No certificate blocks found in the input.');
   return Promise.all(blocks.map(b => parseCertificate(b)));
+}
+
+/**
+ * Parse the extensions included in a PKCS#10 CSR (from the extensionRequest attribute).
+ * Uses the same switch logic as parseExtensions() for certificates.
+ */
+function parseCsrExtensions(csr: Pkcs10CertificateRequest): CertExtension[] {
+  const exts = csr.extensions;
+  if (!exts) return [];
+  const result: CertExtension[] = [];
+  for (const ext of exts) {
+    const item: CertExtension = {
+      oid: ext.type,
+      name: EXT_NAMES[ext.type] ?? ext.type,
+      critical: ext.critical,
+      value: '',
+      raw: bufToHex(ext.rawData),
+    };
+    try {
+      switch (ext.type) {
+        case id_ce_subjectAltName: {
+          const san = new SubjectAlternativeNameExtension(ext.rawData);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          item.value = san.names.items.map((n: any) => `${n.type.toUpperCase()}: ${n.value}`).join('\n');
+          break;
+        }
+        case id_ce_keyUsage: {
+          const ku = new KeyUsagesExtension(ext.rawData);
+          const usages: string[] = [];
+          if (ku.usages & KeyUsageFlags.digitalSignature) usages.push('Digital Signature');
+          if (ku.usages & KeyUsageFlags.nonRepudiation)   usages.push('Non-Repudiation');
+          if (ku.usages & KeyUsageFlags.keyEncipherment)  usages.push('Key Encipherment');
+          if (ku.usages & KeyUsageFlags.dataEncipherment) usages.push('Data Encipherment');
+          if (ku.usages & KeyUsageFlags.keyAgreement)     usages.push('Key Agreement');
+          if (ku.usages & KeyUsageFlags.keyCertSign)      usages.push('Key Cert Sign');
+          if (ku.usages & KeyUsageFlags.cRLSign)          usages.push('CRL Sign');
+          item.value = usages.join(', ');
+          break;
+        }
+        case id_ce_extKeyUsage: {
+          const eku = new ExtendedKeyUsageExtension(ext.rawData);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          item.value = eku.usages.map((oid: any) => EKU_NAMES[String(oid)] ?? String(oid)).join('\n');
+          break;
+        }
+        default:
+          item.value = '(see raw hex)';
+      }
+    } catch {
+      item.value = '(parse error — see raw hex)';
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+/**
+ * Parse a PKCS#10 Certificate Signing Request from PEM text or raw DER bytes.
+ */
+/** Normalise a CSR PEM string so @peculiar/x509 can parse it.
+ *  Handles CRLF line endings and OpenSSL's legacy "NEW CERTIFICATE REQUEST" header. */
+function normaliseCsrPem(raw: string): string {
+  // Normalise line endings
+  let pem = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  // OpenSSL (and Windows certreq) sometimes uses the "NEW" variant header
+  pem = pem
+    .replace(/-----BEGIN NEW CERTIFICATE REQUEST-----/g, '-----BEGIN CERTIFICATE REQUEST-----')
+    .replace(/-----END NEW CERTIFICATE REQUEST-----/g,   '-----END CERTIFICATE REQUEST-----');
+  return pem;
+}
+
+export async function parseCsr(input: string | Buffer): Promise<CsrData> {
+  let csr: Pkcs10CertificateRequest;
+
+  if (typeof input === 'string') {
+    csr = new Pkcs10CertificateRequest(normaliseCsrPem(input));
+  } else {
+    const asText = input.toString('utf8').trim();
+    if (asText.includes('-----BEGIN')) {
+      csr = new Pkcs10CertificateRequest(normaliseCsrPem(asText));
+    } else {
+      csr = new Pkcs10CertificateRequest(new Uint8Array(input));
+    }
+  }
+
+  const pubKey = csr.publicKey;
+  const spki   = bufToHex(pubKey.rawData);
+  const spkiB64Lines = Buffer.from(pubKey.rawData).toString('base64').match(/.{1,64}/g) ?? [];
+  const spkiPem = `-----BEGIN PUBLIC KEY-----\n${spkiB64Lines.join('\n')}\n-----END PUBLIC KEY-----\n`;
+
+  let publicKey: PublicKeyInfo = { algorithm: 'Unknown', spki, spkiPem };
+  try {
+    const cryptoKey = await pubKey.export(cryptoImpl);
+    const alg = cryptoKey.algorithm as { name: string; modulusLength?: number; namedCurve?: string };
+    publicKey = { algorithm: alg.name, keySize: alg.modulusLength, namedCurve: alg.namedCurve, spki, spkiPem };
+  } catch { /* use defaults */ }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sigAlgOid: string = (csr.signatureAlgorithm as any)?.algorithm?.value ?? '';
+  const signatureAlgorithm = SIG_ALG_NAMES[sigAlgOid] ?? (sigAlgOid || 'Unknown');
+
+  return {
+    subject:            parseDNString(csr.subject),
+    publicKey,
+    signatureAlgorithm,
+    extensions:         parseCsrExtensions(csr),
+    raw:                csr.toString('pem'),
+  };
 }

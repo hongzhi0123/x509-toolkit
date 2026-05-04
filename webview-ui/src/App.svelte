@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CertificateData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo } from './types';
+  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo } from './types';
   import CertificateView from './lib/CertificateView.svelte';
+  import CsrView from './lib/CsrView.svelte';
   import PassphraseDialog from './lib/PassphraseDialog.svelte';
 
   // VS Code injects acquireVsCodeApi() into the webview context
@@ -13,9 +14,10 @@
 
   const vscode = acquireVsCodeApi();
 
-  type AppState = 'idle' | 'loading' | 'ready' | 'error';
+  type AppState = 'idle' | 'loading' | 'ready' | 'error' | 'csr';
 
   let state: AppState = 'idle';
+  let csrData: CsrData | null = null;
   let chain: CertificateData[] = [];
   let activeIndex = 0;
   let errorMessage = '';
@@ -91,6 +93,11 @@
           passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName, title: msg.title, description: msg.description, buttonLabel: msg.buttonLabel, requireConfirm: msg.requireConfirm };
           break;
         }
+        case 'csr': {
+          csrData = msg.data;
+          state = 'csr';
+          break;
+        }
       }
     });
 
@@ -135,6 +142,19 @@
     vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: null });
   }
 
+  function handleSignCsr(): void {
+    if (!csrData) return;
+    vscode.postMessage({ type: 'signCsr', csrPem: csrData.raw });
+  }
+
+  function handleSaveCsr(): void {
+    vscode.postMessage({ type: 'saveCsrFile' });
+  }
+
+  function handleSaveKey(): void {
+    vscode.postMessage({ type: 'savePrivateKey' });
+  }
+
   function selectCert(index: number): void {
     activeIndex = index;
     if (index < chain.length) {
@@ -167,6 +187,9 @@
       <h2>Could not parse certificate</h2>
       <p class="error-message">{errorMessage}</p>
     </div>
+
+  {:else if state === 'csr' && csrData}
+    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} />
 
   {:else if state === 'ready' && activeCert}
     {#if errorMessage}
