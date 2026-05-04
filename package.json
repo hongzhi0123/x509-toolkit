@@ -51,11 +51,6 @@
         "icon": "$(file-binary)"
       },
       {
-        "command": "x509toolkit.openP12",
-        "title": "X.509 Toolkit: Open P12 / PFX File",
-        "icon": "$(file-binary)"
-      },
-      {
         "command": "x509toolkit.createSelfSignedP12",
         "title": "X.509 Toolkit: Create Self-Signed P12 (legacy)",
         "icon": "$(key)"
@@ -81,9 +76,6 @@
         },
         {
           "command": "x509toolkit.openFile"
-        },
-        {
-          "command": "x509toolkit.openP12"
         },
         {
           "command": "x509toolkit.createCertificate"

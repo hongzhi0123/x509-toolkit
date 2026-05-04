@@ -108,31 +108,6 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Command: open P12/PFX file explicitly
-  context.subscriptions.push(
-    vscode.commands.registerCommand('x509toolkit.openP12', async () => {
-      const uris = await vscode.window.showOpenDialog({
-        canSelectMany: false,
-        openLabel: 'Open P12 / PFX',
-        filters: {
-          'PKCS#12 Files': ['p12', 'pfx'],
-          'All Files': ['*'],
-        },
-      });
-
-      if (!uris || uris.length === 0) return;
-
-      const panel = getOrCreatePanel(context.extensionUri, context);
-      sendLoading(panel);
-
-      try {
-        await openP12File(uris[0].fsPath, panel);
-      } catch (err: unknown) {
-        sendError(panel, (err as Error).message ?? String(err));
-      }
-    })
-  );
-
   // Command: generate a sample self-signed P12
   context.subscriptions.push(
     vscode.commands.registerCommand('x509toolkit.createSelfSignedP12', async () => {

@@ -71,7 +71,6 @@ The **Create Certificate** command opens a dedicated form to generate a new key 
 |---|---|
 | `X.509 Toolkit: Show Certificate from Selection` | Parse PEM from the active editor's selected text |
 | `X.509 Toolkit: Open Certificate File` | Open a PEM, DER, P7B, P12, or PFX file from disk |
-| `X.509 Toolkit: Open P12 / PFX File` | Open a PKCS#12 keystore with password prompt |
 | `X.509 Toolkit: Create Certificate` | Open the certificate generation form |
 
 The **Show Certificate from Selection** command is also available in the editor **right-click context menu** whenever text is selected.
