@@ -12,4 +12,3 @@ node_modules/**
 .gitignore
 webpack.config.js
 tsconfig.json
-CHANGELOG.md
