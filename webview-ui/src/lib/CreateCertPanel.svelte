@@ -1,12 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CertCreateParams, KeyAlgorithm, CreateCertToExtMsg, ExtToCreateCertMsg } from '../types';
+  import InputDialog from './InputDialog.svelte';
+  import type { CertCreateParams, KeyAlgorithm, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '../types';
 
-  declare function acquireVsCodeApi(): {
-    postMessage(msg: CreateCertToExtMsg): void;
-    getState(): unknown;
-    setState(state: unknown): void;
-  };
   const vscode = acquireVsCodeApi();
 
   // ── defaults ──────────────────────────────────────────────────────────────
@@ -48,6 +44,8 @@
   let panelState: PanelState = 'idle';
   let errorMsg = '';
   let csrPemReady = '';  // CSR PEM returned by csrReady;
+
+  let inputDialogRequest: { requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string } | null = null;
 
   // ── derived smart defaults ───────────────────────────────────────────────
   $: isEC = keyAlgorithm.startsWith('EC');
@@ -109,6 +107,17 @@
           errorMsg = msg.message;
           panelState = 'idle';
           break;
+        case 'requestInputDialog':
+          inputDialogRequest = {
+            requestId: msg.requestId,
+            title: msg.title,
+            icon: msg.icon,
+            description: msg.description,
+            fields: msg.fields,
+            confirmLabel: msg.confirmLabel,
+            cancelLabel: msg.cancelLabel,
+          };
+          break;
       }
     });
     vscode.postMessage({ type: 'ready' });
@@ -121,6 +130,20 @@
   function saveCsr(): void     { vscode.postMessage({ type: 'saveCsrFile' }); }
   function saveKey(): void     { vscode.postMessage({ type: 'savePrivateKey' }); }
   function startOver(): void   { panelState = 'idle'; csrPemReady = ''; errorMsg = ''; }
+
+  function handleInputDialogConfirm(event: CustomEvent<Record<string, string>>): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: event.detail });
+  }
+
+  function handleInputDialogCancel(): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: null });
+  }
 
   function copyCsr(): void {
     navigator.clipboard.writeText(csrPemReady).catch(() => {});
@@ -277,7 +300,7 @@
 
   <!-- ── Key & Validity ──────────────────────────────────────────────────── -->
   <section class="section">
-    <h2 class="section-title">Key &amp; Validity</h2>
+    <h2 class="section-title">Key</h2>
     <div class="grid3">
       <label class="field">
         <span>Key Algorithm</span>
@@ -288,10 +311,6 @@
           <option value="EC-P384">EC P-384  (ECDSA)</option>
           <option value="EC-P521">EC P-521  (ECDSA, strongest)</option>
         </select>
-      </label>
-      <label class="field">
-        <span>Validity (days)</span>
-        <input bind:value={validityDays} type="number" min="1" max="36500" step="1" />
       </label>
       <label class="field checkbox-field" style="align-self:end;">
         <input type="checkbox" bind:checked={isCA} />
@@ -448,6 +467,19 @@
   </div>
   {/if}
 </div>
+
+{#if inputDialogRequest}
+  <InputDialog
+    title={inputDialogRequest.title}
+    icon={inputDialogRequest.icon ?? ''}
+    description={inputDialogRequest.description ?? ''}
+    fields={inputDialogRequest.fields}
+    confirmLabel={inputDialogRequest.confirmLabel ?? 'OK'}
+    cancelLabel={inputDialogRequest.cancelLabel ?? 'Cancel'}
+    on:confirm={handleInputDialogConfirm}
+    on:cancel={handleInputDialogCancel}
+  />
+{/if}
 
 <style>
   .panel {

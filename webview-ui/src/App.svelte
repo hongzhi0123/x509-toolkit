@@ -4,13 +4,8 @@
   import CertificateView from './lib/CertificateView.svelte';
   import CsrView from './lib/CsrView.svelte';
   import PassphraseDialog from './lib/PassphraseDialog.svelte';
-
-  // VS Code injects acquireVsCodeApi() into the webview context
-  declare function acquireVsCodeApi(): {
-    postMessage(msg: WebviewToExtMsg): void;
-    getState(): unknown;
-    setState(state: unknown): void;
-  };
+  import InputDialog from './lib/InputDialog.svelte';
+  import type { InputDialogFieldDef } from './types';
 
   const vscode = acquireVsCodeApi();
 
@@ -33,6 +28,9 @@
 
   // Pending passphrase request from the extension host
   let passphraseRequest: { requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean } | null = null;
+
+  // Pending generic input dialog request from the extension host
+  let inputDialogRequest: { requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string } | null = null;
 
   $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
   $: activeCert = displayChain[activeIndex] ?? null;
@@ -98,6 +96,18 @@
           state = 'csr';
           break;
         }
+        case 'requestInputDialog': {
+          inputDialogRequest = {
+            requestId: msg.requestId,
+            title: msg.title,
+            icon: msg.icon,
+            description: msg.description,
+            fields: msg.fields,
+            confirmLabel: msg.confirmLabel,
+            cancelLabel: msg.cancelLabel,
+          };
+          break;
+        }
       }
     });
 
@@ -142,6 +152,20 @@
     vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: null });
   }
 
+  function handleInputDialogConfirm(event: CustomEvent<Record<string, string>>): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: event.detail });
+  }
+
+  function handleInputDialogCancel(): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: null });
+  }
+
   function handleSignCsr(): void {
     if (!csrData) return;
     vscode.postMessage({ type: 'signCsr', csrPem: csrData.raw });
@@ -153,6 +177,12 @@
 
   function handleSaveKey(): void {
     vscode.postMessage({ type: 'savePrivateKey' });
+  }
+
+  function handleSaveBoth(): void {
+    const cn = csrData?.subject.commonName ?? csrData?.subject.raw ?? 'certificate';
+    const suggestedName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    vscode.postMessage({ type: 'saveBothFiles', suggestedName });
   }
 
   function selectCert(index: number): void {
@@ -189,7 +219,7 @@
     </div>
 
   {:else if state === 'csr' && csrData}
-    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} />
+    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
 
   {:else if state === 'ready' && activeCert}
     {#if errorMessage}
@@ -248,6 +278,19 @@
     requireConfirm={passphraseRequest.requireConfirm ?? false}
     on:submit={handlePassphraseSubmit}
     on:cancel={handlePassphraseCancel}
+  />
+{/if}
+
+{#if inputDialogRequest}
+  <InputDialog
+    title={inputDialogRequest.title}
+    icon={inputDialogRequest.icon ?? ''}
+    description={inputDialogRequest.description ?? ''}
+    fields={inputDialogRequest.fields}
+    confirmLabel={inputDialogRequest.confirmLabel ?? 'OK'}
+    cancelLabel={inputDialogRequest.cancelLabel ?? 'Cancel'}
+    on:confirm={handleInputDialogConfirm}
+    on:cancel={handleInputDialogCancel}
   />
 {/if}
 

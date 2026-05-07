@@ -239,41 +239,6 @@
       </div>
     </SectionCard>
 
-    <!-- Private Key (present when loaded from P12 or imported) -->
-    {#if effectivePrivateKey}
-      <SectionCard title="Private Key" icon="🗝️">
-        {#if importKeyError}
-          <div class="key-import-error">⚠️ {importKeyError}</div>
-        {/if}
-        <FieldRow label="Algorithm" value={effectivePrivateKey.algorithm} />
-        {#if effectivePrivateKey.keySize}
-          <FieldRow label="Key Size" value="{effectivePrivateKey.keySize} bits" />
-        {/if}
-        {#if effectivePrivateKey.namedCurve}
-          <FieldRow label="Named Curve" value={effectivePrivateKey.namedCurve} />
-        {/if}
-        <div class="key-pem-block">
-          <button class="key-pem-toolbar" on:click={() => privKeyPemOpen = !privKeyPemOpen} aria-expanded={privKeyPemOpen}>
-            <span class="key-pem-left">
-              <span class="pem-chevron" style="transform: rotate({privKeyPemOpen ? '270deg' : '90deg'})">›</span>
-              <span class="fh-label">PKCS#8 (Private Key)</span>
-            </span>
-            <div class="key-btn-row">
-              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.hex ?? '')} title="Copy PKCS#8 as hex">⧉ Copy Hex</button>
-              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.pem ?? '')} title="Copy PKCS#8 as PEM">⧉ Copy PEM</button>
-            </div>
-          </button>
-          {#if privKeyPemOpen}
-            <pre class="raw-pem private-key-pem">{effectivePrivateKey.pem}</pre>
-          {/if}
-        </div>
-      </SectionCard>
-    {:else if importKeyError}
-      <SectionCard title="Private Key" icon="🗝️">
-        <div class="key-import-error">⚠️ {importKeyError}</div>
-      </SectionCard>
-    {/if}
-
     <!-- Signature -->
     <SectionCard title="Signature" icon="✍️">
       <FieldRow label="Algorithm" value={cert.signature.algorithm} />
@@ -319,6 +284,47 @@
         <pre class="hex-dump">{hexDump}</pre>
       </div>
     </SectionCard>
+
+    <!-- Private Key (separate artifact — shown after certificate sections) -->
+    {#if effectivePrivateKey}
+      <div class="key-divider">
+        <span class="key-divider-label">🗝️ Private Key</span>
+      </div>
+      <SectionCard title="Private Key" icon="🗝️" variant="key">
+        {#if importKeyError}
+          <div class="key-import-error">⚠️ {importKeyError}</div>
+        {/if}
+        <FieldRow label="Algorithm" value={effectivePrivateKey.algorithm} />
+        {#if effectivePrivateKey.keySize}
+          <FieldRow label="Key Size" value="{effectivePrivateKey.keySize} bits" />
+        {/if}
+        {#if effectivePrivateKey.namedCurve}
+          <FieldRow label="Named Curve" value={effectivePrivateKey.namedCurve} />
+        {/if}
+        <div class="key-pem-block">
+          <button class="key-pem-toolbar" on:click={() => privKeyPemOpen = !privKeyPemOpen} aria-expanded={privKeyPemOpen}>
+            <span class="key-pem-left">
+              <span class="pem-chevron" style="transform: rotate({privKeyPemOpen ? '270deg' : '90deg'})">›</span>
+              <span class="fh-label">PKCS#8 (Private Key)</span>
+            </span>
+            <div class="key-btn-row">
+              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.hex ?? '')} title="Copy PKCS#8 as hex">⧉ Copy Hex</button>
+              <button class="copy-btn" on:click|stopPropagation={() => copy(effectivePrivateKey?.pem ?? '')} title="Copy PKCS#8 as PEM">⧉ Copy PEM</button>
+            </div>
+          </button>
+          {#if privKeyPemOpen}
+            <pre class="raw-pem private-key-pem">{effectivePrivateKey.pem}</pre>
+          {/if}
+        </div>
+      </SectionCard>
+    {:else if importKeyError}
+      <div class="key-divider">
+        <span class="key-divider-label">🗝️ Private Key</span>
+      </div>
+      <SectionCard title="Private Key" icon="🗝️" variant="key">
+        <div class="key-import-error">⚠️ {importKeyError}</div>
+      </SectionCard>
+    {/if}
 
   </div>
 </div>
@@ -601,6 +607,31 @@
     border: 1px solid var(--vscode-input-border, rgba(255,255,255,0.09));
     overflow-x: auto;
     line-height: 1.6;
+  }
+
+  /* ── Key divider (separates private key from cert sections) ── */
+  .key-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .key-divider::before,
+  .key-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 35%, transparent);
+  }
+
+  .key-divider-label {
+    color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 85%, var(--vscode-descriptionForeground, #888));
+    flex-shrink: 0;
   }
 
   /* ── Global copy-button style ── */

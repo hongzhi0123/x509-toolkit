@@ -4,9 +4,29 @@ import * as crypto from 'crypto';
 import { parseCertificate, parseCsr } from '../parsers/certificateParser';
 import { parseP12, generateCertificate, generateCsr } from '../parsers/p12Parser';
 import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './panelManager';
-import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg } from '../types/types';
+import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '../types/types';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
+
+// ------------------------------------------------------------------
+// Generic input dialog bridge for the Create Cert panel
+// Maps requestId → resolve function of the awaiting Promise
+// ------------------------------------------------------------------
+const pendingCreateCertInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
+
+function requestInputDialogFromCreateCertPanel(
+  panel: vscode.WebviewPanel,
+  title: string,
+  fields: InputDialogFieldDef[],
+  options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string }
+): Promise<Record<string, string> | null> {
+  const requestId = `idlg-cc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise(resolve => {
+    pendingCreateCertInputDialogRequests.set(requestId, resolve);
+    const msg: ExtToCreateCertMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
+    panel.webview.postMessage(msg);
+  });
+}
 
 // Held for the lifetime of the open panel
 let pendingCaCertPem: string | undefined;
@@ -47,6 +67,15 @@ export function openCreateCertPanel(
 
           case 'ready':
             break;
+
+          case 'inputDialogResponse': {
+            const resolve = pendingCreateCertInputDialogRequests.get(msg.requestId);
+            if (resolve) {
+              pendingCreateCertInputDialogRequests.delete(msg.requestId);
+              resolve(msg.values);
+            }
+            break;
+          }
 
           case 'pickCaCert': {
             const uris = await vscode.window.showOpenDialog({
@@ -94,13 +123,21 @@ export function openCreateCertPanel(
                 const msg = (firstErr as Error).message ?? '';
                 // If the error looks like an encryption/passphrase error, prompt the user
                 if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(msg)) {
-                  const passphrase = await vscode.window.showInputBox({
-                    title: 'CA Private Key Passphrase',
-                    prompt: 'This private key is encrypted. Enter its passphrase.',
-                    password: true,
-                    ignoreFocusOut: true,
-                  });
-                  if (passphrase === undefined) break;  // user cancelled
+                  const result = await requestInputDialogFromCreateCertPanel(
+                    panel,
+                    'CA Private Key Passphrase',
+                    [{
+                      id: 'passphrase',
+                      label: 'Passphrase',
+                      type: 'password',
+                      placeholder: 'Enter passphrase',
+                      required: true,
+                      hint: 'This private key is encrypted. Enter its passphrase.',
+                    }],
+                    { icon: '🔑', confirmLabel: 'Unlock' },
+                  );
+                  if (result === null) break;  // user cancelled
+                  const passphrase = result['passphrase'];
                   nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
                 } else {
                   throw firstErr;

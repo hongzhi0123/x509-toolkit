@@ -5,7 +5,7 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { parseCertificate } from '../parsers/certificateParser';
 import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
-import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg } from '../types/types';
+import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef } from '../types/types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 
@@ -19,6 +19,26 @@ let pendingViewerCsrKeyPem: string | undefined;
 // Maps requestId → resolve function of the awaiting Promise
 // ------------------------------------------------------------------
 const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
+
+// ------------------------------------------------------------------
+// Generic input dialog bridge
+// Maps requestId → resolve function of the awaiting Promise
+// ------------------------------------------------------------------
+const pendingInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
+
+export function requestInputDialogFromWebview(
+  panel: vscode.WebviewPanel,
+  title: string,
+  fields: InputDialogFieldDef[],
+  options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string }
+): Promise<Record<string, string> | null> {
+  const requestId = `idlg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise(resolve => {
+    pendingInputDialogRequests.set(requestId, resolve);
+    const msg: ExtToWebviewMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
+    panel.webview.postMessage(msg);
+  });
+}
 
 export function requestPassphraseFromWebview(
   panel: vscode.WebviewPanel,
@@ -103,6 +123,12 @@ export function getOrCreatePanel(
         if (resolve) {
           pendingPassphraseRequests.delete(msg.requestId);
           resolve(msg.passphrase);
+        }
+      } else if (msg.type === 'inputDialogResponse') {
+        const resolve = pendingInputDialogRequests.get(msg.requestId);
+        if (resolve) {
+          pendingInputDialogRequests.delete(msg.requestId);
+          resolve(msg.values);
         }
       } else if (msg.type === 'downloadCaIssuer') {
         const { url } = msg;
@@ -338,13 +364,21 @@ export function getOrCreatePanel(
           } catch (firstErr) {
             const errMsg = (firstErr as Error).message ?? '';
             if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(errMsg)) {
-              const passphrase = await vscode.window.showInputBox({
-                title: 'CA Private Key Passphrase',
-                prompt: 'This private key is encrypted. Enter its passphrase.',
-                password: true,
-                ignoreFocusOut: true,
-              });
-              if (passphrase === undefined) return;
+              const result = await requestInputDialogFromWebview(
+                panel,
+                'CA Private Key Passphrase',
+                [{
+                  id: 'passphrase',
+                  label: 'Passphrase',
+                  type: 'password',
+                  placeholder: 'Enter passphrase',
+                  required: true,
+                  hint: 'This private key is encrypted. Enter its passphrase.',
+                }],
+                { icon: '🔑', confirmLabel: 'Unlock' },
+              );
+              if (result === null) return;
+              const passphrase = result['passphrase'];
               nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
             } else {
               throw firstErr;
@@ -393,14 +427,14 @@ export function getOrCreatePanel(
         }
 
         // Step 4 — Validity days
-        const daysStr = await vscode.window.showInputBox({
-          title: 'Sign CSR — Validity',
-          prompt: 'How many days should the signed certificate be valid?',
-          value: '365',
-          ignoreFocusOut: true,
-          validateInput: v => /^\d+$/.test(v) && +v > 0 ? null : 'Enter a positive integer',
-        });
-        if (daysStr === undefined) return;
+        const validityResult = await requestInputDialogFromWebview(
+          panel,
+          'Certificate Validity',
+          [{ id: 'days', label: 'Validity (days)', type: 'number', value: '365', min: '1', max: '36500', step: 1, required: true, hint: 'How many days the signed certificate should be valid.' }],
+          { icon: '📅', confirmLabel: 'Continue' }
+        );
+        if (!validityResult) return;
+        const daysStr = validityResult.days;
 
         // Step 5 — P12 password
         const p12Passphrase = await requestPassphraseFromWebview(
@@ -447,8 +481,16 @@ export function getOrCreatePanel(
           vscode.window.showWarningMessage('No private key in memory. The key is only available immediately after CSR generation.');
           return;
         }
+        const keyNameResult = await requestInputDialogFromWebview(
+          panel,
+          'Save Private Key',
+          [{ id: 'name', label: 'File name', type: 'text', value: 'private', placeholder: 'private', required: true, hint: 'A .key extension will be added automatically.' }],
+          { icon: '🗝️', confirmLabel: 'Save…' }
+        );
+        if (!keyNameResult) return;
+        const safeKeyName = keyNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'private';
         const keyUri = await vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file('private.key'),
+          defaultUri: vscode.Uri.file(`${safeKeyName}.key`),
           filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
           saveLabel: 'Save Private Key',
           title: 'Save Private Key',
@@ -461,8 +503,16 @@ export function getOrCreatePanel(
           vscode.window.showWarningMessage('No CSR in memory.');
           return;
         }
+        const csrNameResult = await requestInputDialogFromWebview(
+          panel,
+          'Save Certificate Signing Request',
+          [{ id: 'name', label: 'File name', type: 'text', value: 'request', placeholder: 'request', required: true, hint: 'A .csr extension will be added automatically.' }],
+          { icon: '📄', confirmLabel: 'Save…' }
+        );
+        if (!csrNameResult) return;
+        const safeCsrName = csrNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'request';
         const csrUri = await vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file('request.csr'),
+          defaultUri: vscode.Uri.file(`${safeCsrName}.csr`),
           filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
           saveLabel: 'Save CSR',
           title: 'Save Certificate Signing Request',
@@ -470,6 +520,36 @@ export function getOrCreatePanel(
         if (!csrUri) return;
         fs.writeFileSync(csrUri.fsPath, pendingViewerCsrPem, 'utf8');
         vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
+      } else if (msg.type === 'saveBothFiles') {
+        if (!pendingViewerCsrPem || !pendingViewerCsrKeyPem) {
+          vscode.window.showWarningMessage('CSR or private key is no longer in memory.');
+          return;
+        }
+        const bothNameResult = await requestInputDialogFromWebview(
+          panel,
+          'Save CSR and Private Key',
+          [{ id: 'name', label: 'Base file name', type: 'text', value: msg.suggestedName, placeholder: 'certificate', required: true, hint: 'Extensions .csr and .key will be added automatically.' }],
+          { icon: '💾', description: 'Both files will be saved with the same base name.', confirmLabel: 'Save…' }
+        );
+        if (!bothNameResult) return;
+        const safe = bothNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'certificate';
+        const csrUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(`${safe}.csr`),
+          filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
+          saveLabel: 'Save CSR',
+          title: 'Save Certificate Signing Request',
+        });
+        if (!csrUri) return;
+        fs.writeFileSync(csrUri.fsPath, pendingViewerCsrPem, 'utf8');
+        const keyUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(`${safe}.key`),
+          filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+          saveLabel: 'Save Private Key',
+          title: 'Save Private Key',
+        });
+        if (!keyUri) return;
+        fs.writeFileSync(keyUri.fsPath, pendingViewerCsrKeyPem, 'utf8');
+        vscode.window.showInformationMessage(`Saved: ${csrUri.fsPath} and ${keyUri.fsPath}`);
       }
     },
     undefined,

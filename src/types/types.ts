@@ -146,7 +146,9 @@ export type CreateCertToExtMsg =
   | { type: 'generateCsr'; params: CertCreateParams; keyPassword: string }
   | { type: 'saveCsrFile' }
   | { type: 'savePrivateKey' }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  /** Response to 'requestInputDialog' from the extension; values is null if the user cancelled */
+  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null };
 
 export type ExtToCreateCertMsg =
   | { type: 'caCertLoaded'; subject: string }
@@ -154,7 +156,37 @@ export type ExtToCreateCertMsg =
   | { type: 'generating' }
   | { type: 'done' }
   | { type: 'csrReady'; csrPem: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** Extension asks the webview to show a generic input dialog */
+  | { type: 'requestInputDialog'; requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string };
+
+// ─── Generic input dialog ────────────────────────────────────────────────────
+
+/** Field descriptor passed to the generic InputDialog webview component. */
+export interface InputDialogFieldDef {
+  /** Unique key used in the result map */
+  id: string;
+  /** Label shown above the input */
+  label: string;
+  /** Input type. 'select' renders a <select>; 'number'/'date' use native inputs */
+  type?: 'text' | 'password' | 'number' | 'date' | 'select';
+  /** Initial value */
+  value?: string;
+  /** Placeholder text */
+  placeholder?: string;
+  /** Options for type='select' */
+  options?: Array<{ value: string; label: string }>;
+  /** Mark field as required; empty value blocks submission */
+  required?: boolean;
+  /** Small hint rendered below the field */
+  hint?: string;
+  /** Minimum value / date string */
+  min?: string;
+  /** Maximum value / date string */
+  max?: string;
+  /** Step for type='number' */
+  step?: number;
+}
 
 // ─── Message protocol ────────────────────────────────────────────────────────
 
@@ -168,7 +200,9 @@ export type ExtToWebviewMsg =
   | { type: 'privateKeyImported'; certIndex: number; key: PrivateKeyInfo }
   | { type: 'privateKeyImportError'; certIndex: number; message: string }
   /** Extension asks the webview to show an in-panel passphrase dialog */
-  | { type: 'requestPassphrase'; requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean };
+  | { type: 'requestPassphrase'; requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean }
+  /** Extension asks the webview to show a generic input dialog */
+  | { type: 'requestInputDialog'; requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string };
 
 export type WebviewToExtMsg =
   | { type: 'ready' }
@@ -181,5 +215,8 @@ export type WebviewToExtMsg =
   | { type: 'signCsr'; csrPem: string }
   | { type: 'saveCsrFile' }
   | { type: 'savePrivateKey' }
+  | { type: 'saveBothFiles'; suggestedName: string }
   /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
-  | { type: 'passphraseResponse'; requestId: string; passphrase: string | null };
+  | { type: 'passphraseResponse'; requestId: string; passphrase: string | null }
+  /** Response to 'requestInputDialog'; values is null if the user cancelled */
+  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null };
