@@ -2,7 +2,7 @@
   "name": "x509-toolkit",
   "displayName": "X.509 Certificate Toolkit",
   "description": "View and analyze X.509 certificates. Supports PEM, DER, PFX files.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "hongzhi0123",
   "icon": "images/icon.png",
   "license": "MIT",
