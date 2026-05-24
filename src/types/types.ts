@@ -258,3 +258,62 @@ export type ExtToConvertMsg =
   | { type: 'convertFileSelected'; slotId: string; fileName: string; fileCount?: number }
   | { type: 'convertResult'; message: string }
   | { type: 'convertError'; message: string };
+
+// ─── Standalone Key Viewer ────────────────────────────────────────────────────
+
+export interface StandaloneKeyData {
+  /** 'private' or 'public' */
+  kind: 'private' | 'public';
+  /** Algorithm display name e.g. 'RSA', 'EC', 'Ed25519' */
+  algorithm: string;
+  /** RSA modulus length in bits */
+  keySize?: number;
+  /** EC named curve e.g. 'P-256' */
+  namedCurve?: string;
+  /** SHA-1 of SPKI DER, colon-separated uppercase hex (matches SubjectKeyIdentifier) */
+  keyId: string;
+  /** RSA modulus as colon-separated uppercase hex */
+  modulus?: string;
+  /** RSA public exponent as colon-separated uppercase hex */
+  publicExponent?: string;
+  /** True when the key file was passphrase-protected on disk */
+  isEncrypted: boolean;
+  /** Encoding/format as detected from the source file */
+  inputFormat: 'pkcs8-pem' | 'encrypted-pkcs8-pem' | 'pkcs1-pem' | 'sec1-pem' | 'spki-pem' | 'pkcs1-pub-pem' | 'spki-der' | 'der' | 'unknown';
+  /** SubjectPublicKeyInfo PEM (BEGIN PUBLIC KEY) */
+  spkiPem: string;
+  /** Unencrypted PKCS#8 PEM — present only for private keys */
+  pkcs8Pem?: string;
+}
+
+export type KeyViewerToExtMsg =
+  | { type: 'keyViewerReady' }
+  | { type: 'copyToClipboard'; value: string }
+  | { type: 'exportPrivateKey'; format: 'pkcs8-pem' | 'pkcs8-der' | 'pkcs1-pem' | 'pkcs1-der' | 'sec1-pem' | 'sec1-der'; encrypt: boolean; suggestedName: string }
+  | { type: 'exportPublicKey'; format: 'spki-pem' | 'spki-der'; suggestedName: string }
+  | { type: 'passphraseResponse'; requestId: string; passphrase: string | null }
+  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null };
+
+export type ExtToKeyViewerMsg =
+  | { type: 'keyLoading' }
+  | { type: 'keyData'; key: StandaloneKeyData }
+  | { type: 'keyError'; message: string }
+  | { type: 'requestPassphrase'; requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean }
+  | { type: 'requestInputDialog'; requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string };
+
+// ─── Key Generator ────────────────────────────────────────────────────────────
+
+export type KeyGenToExtMsg =
+  | { type: 'keyGenReady' }
+  | { type: 'keyGenGenerate'; algorithm: KeyAlgorithm }
+  | { type: 'keyGenSavePrivateKey' }
+  | { type: 'keyGenSavePublicKey' }
+  | { type: 'keyGenViewKey' }
+  | { type: 'copyToClipboard'; value: string }
+  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null };
+
+export type ExtToKeyGenMsg =
+  | { type: 'keyGenGenerating' }
+  | { type: 'keyGenDone'; key: StandaloneKeyData }
+  | { type: 'keyGenError'; message: string }
+  | { type: 'requestInputDialog'; requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string };
