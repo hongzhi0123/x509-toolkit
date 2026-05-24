@@ -10,7 +10,7 @@ import {
 } from '@peculiar/x509';
 import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
 import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
-import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef } from '../types/types';
+import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '../types/types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 
@@ -649,21 +649,24 @@ export function getOrCreatePanel(
   return panel;
 }
 
-export function sendLoading(panel: vscode.WebviewPanel): void {
+export function sendLoading(panel: vscode.WebviewPanel, status?: string): void {
   pendingViewerCsrPem = undefined;
   pendingViewerCsrKeyPem = undefined;
-  const msg: ExtToWebviewMsg = { type: 'loading' };
+  const msg: ExtToWebviewMsg = status ? { type: 'loading', status } : { type: 'loading' };
   panel.webview.postMessage(msg);
 }
 
 export function sendCertificates(
   panel: vscode.WebviewPanel,
   chain: CertificateData[],
-  activeIndex = 0
+  activeIndex = 0,
+  tlsSource?: TlsConnectionInfo
 ): void {
   pendingViewerCsrPem = undefined;
   pendingViewerCsrKeyPem = undefined;
-  const msg: ExtToWebviewMsg = { type: 'certificate', chain, activeIndex };
+  const msg: ExtToWebviewMsg = tlsSource
+    ? { type: 'certificate', chain, activeIndex, tlsSource }
+    : { type: 'certificate', chain, activeIndex };
   panel.webview.postMessage(msg);
 }
 

@@ -64,6 +64,11 @@
         "command": "x509toolkit.openFromExplorer",
         "title": "Open with X.509 Toolkit",
         "icon": "$(shield)"
+      },
+      {
+        "command": "x509toolkit.inspectTlsServer",
+        "title": "X.509 Toolkit: Inspect TLS Server Certificate",
+        "icon": "$(plug)"
       }
     ],
     "menus": {
@@ -91,6 +96,9 @@
         },
         {
           "command": "x509toolkit.createCertificate"
+        },
+        {
+          "command": "x509toolkit.inspectTlsServer"
         }
       ]
     }

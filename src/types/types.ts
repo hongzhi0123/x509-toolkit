@@ -92,6 +92,19 @@ export interface CertificateData {
   sourceFormat?: 'pem' | 'der' | 'p12';
 }
 
+export interface TlsConnectionInfo {
+  host: string;
+  port: number;
+  /** Resolved IP address of the server */
+  ip: string;
+  /** TLS protocol version, e.g. 'TLSv1.3' */
+  protocol: string;
+  /** Negotiated cipher suite name */
+  cipher: string;
+  /** Ordered log of handshake progress steps */
+  steps: string[];
+}
+
 export interface CsrData {
   subject: DistinguishedName;
   publicKey: PublicKeyInfo;
@@ -193,8 +206,9 @@ export interface InputDialogFieldDef {
 // ─── Message protocol ────────────────────────────────────────────────────────
 
 export type ExtToWebviewMsg =
-  | { type: 'loading' }
-  | { type: 'certificate'; chain: CertificateData[]; activeIndex: number }
+  | { type: 'loading'; status?: string }
+  | { type: 'tlsProgress'; step: string }
+  | { type: 'certificate'; chain: CertificateData[]; activeIndex: number; tlsSource?: TlsConnectionInfo }
   | { type: 'csr'; data: CsrData }
   | { type: 'error'; message: string }
   | { type: 'caIssuerCert'; cert: CertificateData; url: string }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo } from './types';
+  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo, TlsConnectionInfo } from './types';
   import CertificateView from './lib/CertificateView.svelte';
   import CsrView from './lib/CsrView.svelte';
   import PassphraseDialog from './lib/PassphraseDialog.svelte';
@@ -20,11 +20,17 @@
   // Downloaded CA Issuer certificates (appended as extra tabs)
   let downloadedCerts: Array<{ url: string; cert: CertificateData }> = [];
   let loadingUrls: Set<string> = new Set();
-  let chainNavHeight = 0;
+  let stickyHeaderHeight = 0;
 
   // Per-cert imported private keys (keyed by cert index in chain)
   let importedKeys: Map<number, PrivateKeyInfo> = new Map();
   let importKeyErrors: Map<number, string> = new Map();
+
+  // TLS connection info — set when the panel was opened via Inspect TLS Server
+  let tlsConnectionInfo: TlsConnectionInfo | null = null;
+  let tlsBannerExpanded = false;
+  // Live progress text shown in the loading state
+  let loadingStep = '';
 
   // Pending passphrase request from the extension host
   let passphraseRequest: { requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean } | null = null;
@@ -56,6 +62,11 @@
           downloadedCerts = [];
           loadingUrls = new Set();
           errorMessage = '';
+          tlsConnectionInfo = null;
+          loadingStep = msg.status ?? '';
+          break;
+        case 'tlsProgress':
+          loadingStep = msg.step;
           break;
         case 'certificate':
           chain = msg.chain;
@@ -64,6 +75,9 @@
           loadingUrls = new Set();
           importedKeys = new Map();
           importKeyErrors = new Map();
+          tlsConnectionInfo = msg.tlsSource ?? null;
+          tlsBannerExpanded = false;
+          loadingStep = '';
           state = 'ready';
           break;
         case 'error':
@@ -234,7 +248,7 @@
   {:else if state === 'loading'}
     <div class="empty-state">
       <div class="spinner"></div>
-      <p>Parsing certificate…</p>
+      <p>{loadingStep || 'Parsing certificate…'}</p>
     </div>
 
   {:else if state === 'error'}
@@ -248,6 +262,56 @@
     <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
 
   {:else if state === 'ready' && activeCert}
+    <div class="sticky-header" bind:clientHeight={stickyHeaderHeight}>
+      {#if tlsConnectionInfo}
+        <div class="tls-info-banner" class:expanded={tlsBannerExpanded}>
+          <div class="tls-summary" role="button" tabindex="0"
+               on:click={() => tlsBannerExpanded = !tlsBannerExpanded}
+               on:keydown={(e) => e.key === 'Enter' && (tlsBannerExpanded = !tlsBannerExpanded)}>
+            <span class="tls-chevron">{tlsBannerExpanded ? '▼' : '▶'}</span>
+            <span class="tls-info-icon">🔌</span>
+            <span class="tls-info-text">
+              <strong>{tlsConnectionInfo.host}:{tlsConnectionInfo.port}</strong>
+              {#if tlsConnectionInfo.ip && tlsConnectionInfo.ip !== tlsConnectionInfo.host}
+                <span class="tls-ip">({tlsConnectionInfo.ip})</span>
+              {/if}
+              &nbsp;&middot;&nbsp;<span class="tls-proto">{tlsConnectionInfo.protocol}</span>
+              &nbsp;&middot;&nbsp;<span class="tls-cipher">{tlsConnectionInfo.cipher}</span>
+            </span>
+            <button class="dismiss-btn" on:click|stopPropagation={() => tlsConnectionInfo = null} title="Dismiss">✕</button>
+          </div>
+          {#if tlsBannerExpanded}
+            <ol class="tls-steps">
+              {#each tlsConnectionInfo.steps as step}
+                <li>✓ {step}</li>
+              {/each}
+            </ol>
+          {/if}
+        </div>
+      {/if}
+      {#if displayChain.length > 1}
+        <nav class="chain-nav" aria-label="Certificate chain">
+          {#each displayChain as cert, i}
+            <button
+              class="chain-tab"
+              class:active={i === activeIndex}
+              on:click={() => selectCert(i)}
+              title={cert.subject.raw}
+            >
+              <span class="chain-index">{i + 1}</span>
+              <span class="chain-cn">{cert.subject.commonName ?? cert.subject.raw}</span>
+              {#if i >= chain.length}
+                <span class="badge badge-downloaded">↓ CA</span>
+              {:else if cert.isCA}
+                <span class="badge badge-ca">CA</span>
+              {:else}
+                <span class="badge badge-ee">EE</span>
+              {/if}
+            </button>
+          {/each}
+        </nav>
+      {/if}
+    </div>
     {#if errorMessage}
       <div class="ca-issuer-error">
         <span>⚠️ {errorMessage}</span>
@@ -278,28 +342,6 @@
         </div>
       </div>
     {/if}
-    {#if displayChain.length > 1}
-      <nav class="chain-nav" aria-label="Certificate chain" bind:clientHeight={chainNavHeight}>
-        {#each displayChain as cert, i}
-          <button
-            class="chain-tab"
-            class:active={i === activeIndex}
-            on:click={() => selectCert(i)}
-            title={cert.subject.raw}
-          >
-            <span class="chain-index">{i + 1}</span>
-            <span class="chain-cn">{cert.subject.commonName ?? cert.subject.raw}</span>
-            {#if i >= chain.length}
-              <span class="badge badge-downloaded">↓ CA</span>
-            {:else if cert.isCA}
-              <span class="badge badge-ca">CA</span>
-            {:else}
-              <span class="badge badge-ee">EE</span>
-            {/if}
-          </button>
-        {/each}
-      </nav>
-    {/if}
     {#key activeCert}
       <CertificateView
         cert={activeCert}
@@ -308,7 +350,7 @@
         importedPrivateKey={importedKeys.get(activeIndex)}
         importKeyError={importKeyErrors.get(activeIndex)}
         {loadingUrls}
-        topOffset={displayChain.length > 1 ? chainNavHeight : 0}
+        topOffset={stickyHeaderHeight}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
         on:exportPrivateKey={handleExportPrivateKey}
@@ -420,6 +462,13 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ─── Chain tabs ─── */
+  /* ─── Sticky header wrapper (TLS banner + chain tabs) ─── */
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
   .chain-nav {
     display: flex;
     flex-wrap: wrap;
@@ -427,9 +476,6 @@
     background: var(--vscode-sideBar-background, #181825);
     border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
     gap: 2px;
-    position: sticky;
-    top: 0;
-    z-index: 20;
   }
 
   .chain-tab {
@@ -539,6 +585,75 @@
     flex-shrink: 0;
   }
   .dismiss-btn:hover { opacity: 1; }
+
+  /* ─── TLS connection info banner ─── */
+  .tls-info-banner {
+    background: var(--vscode-sideBar-background, #181825);
+    border-bottom: 1px solid rgba(166,227,161,0.35);
+    font-size: 0.8rem;
+  }
+
+  .tls-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    flex-wrap: wrap;
+  }
+  .tls-summary:hover { background: rgba(255,255,255,0.04); }
+
+  .tls-chevron {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    flex-shrink: 0;
+    width: 0.7rem;
+  }
+
+  .tls-info-icon { flex-shrink: 0; }
+
+  .tls-info-text {
+    flex: 1;
+    color: var(--vscode-descriptionForeground, #aaa);
+    min-width: 0;
+  }
+
+  .tls-info-text strong {
+    color: var(--vscode-foreground, #cdd6f4);
+  }
+
+  .tls-ip {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .tls-proto {
+    color: var(--vscode-terminal-ansiGreen, #a6e3a1);
+    font-weight: 600;
+  }
+
+  .tls-cipher {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+
+  .tls-steps {
+    margin: 0;
+    padding: 0.3rem 1rem 0.5rem 2.8rem;
+    list-style: none;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .tls-steps li {
+    padding: 0.15rem 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    color: var(--vscode-terminal-ansiGreen, #a6e3a1);
+    opacity: 0.85;
+  }
 
   /* ─── No-chain banner ─── */
   .no-chain-banner {
