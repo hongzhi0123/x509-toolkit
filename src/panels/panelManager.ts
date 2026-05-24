@@ -147,21 +147,19 @@ export function getOrCreatePanel(
             panel.webview.postMessage(reply);
           });
       } else if (msg.type === 'exportCert') {
-        const { pem, suggestedName } = msg;
+        const { pem, suggestedName, format } = msg;
+        const filters: { [name: string]: string[] } = format === 'der'
+          ? { 'DER Certificate': ['der', 'cer'] }
+          : { 'PEM Certificate': ['pem', 'crt', 'cer'] };
         vscode.window.showSaveDialog({
           defaultUri: vscode.Uri.file(suggestedName),
-          filters: {
-            'PEM Certificate': ['pem', 'crt', 'cer'],
-            'DER Certificate': ['der', 'cer'],
-          },
+          filters,
           saveLabel: 'Export Certificate',
-          title: 'Export Certificate',
+          title: `Export Certificate as ${format.toUpperCase()}`,
         }).then(uri => {
           if (!uri) return;
-          const ext = uri.fsPath.split('.').pop()?.toLowerCase() ?? 'pem';
           let data: Buffer;
-          if (ext === 'der') {
-            // Strip PEM headers and decode base64 to binary DER
+          if (format === 'der') {
             const b64 = pem
               .replace(/-----BEGIN CERTIFICATE-----/g, '')
               .replace(/-----END CERTIFICATE-----/g, '')

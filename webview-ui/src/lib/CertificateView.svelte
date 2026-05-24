@@ -17,16 +17,16 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
   }
 
-  function exportCert(): void {
+  function exportCertAs(format: 'pem' | 'der'): void {
     const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
     const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
-    dispatch('export', { pem: cert.raw, suggestedName: `${safeName}.pem` });
+    dispatch('export', { pem: cert.raw, suggestedName: `${safeName}.${format}`, format });
   }
 
   function createP12(): void {
@@ -148,11 +148,32 @@
         </button>
         {#if actionsOpen}
           <div class="actions-dropdown" role="menu">
-            <button class="actions-item" role="menuitem" on:click={() => { exportCert(); closeActions(); }}>
-              <span class="actions-item-icon">⤓</span> Export Certificate
+            <button
+              class="actions-item"
+              role="menuitem"
+              disabled={cert.sourceFormat === 'pem'}
+              title={cert.sourceFormat === 'pem' ? 'Already a PEM file' : 'Save certificate as PEM'}
+              on:click={() => { exportCertAs('pem'); closeActions(); }}
+            >
+              <span class="actions-item-icon">⤓</span> Export as PEM
+            </button>
+            <button
+              class="actions-item"
+              role="menuitem"
+              disabled={cert.sourceFormat === 'der'}
+              title={cert.sourceFormat === 'der' ? 'Already a DER file' : 'Save certificate as DER'}
+              on:click={() => { exportCertAs('der'); closeActions(); }}
+            >
+              <span class="actions-item-icon">⤓</span> Export as DER
             </button>
             {#if !cert.isCA}
-              <button class="actions-item" role="menuitem" on:click={() => { createP12(); closeActions(); }}>
+              <button
+                class="actions-item"
+                role="menuitem"
+                disabled={cert.sourceFormat === 'p12'}
+                title={cert.sourceFormat === 'p12' ? 'Already a P12 file' : 'Package certificate and chain into a P12 / PFX'}
+                on:click={() => { createP12(); closeActions(); }}
+              >
                 <span class="actions-item-icon">🔒</span> Create P12 / PFX
               </button>
             {/if}
@@ -443,9 +464,13 @@
     width: 100%;
     transition: background 0.1s;
   }
-  .actions-item:hover {
+  .actions-item:hover:not(:disabled) {
     background: var(--vscode-menu-selectionBackground, rgba(255,255,255,0.1));
     color: var(--vscode-menu-selectionForeground, var(--vscode-editor-foreground));
+  }
+  .actions-item:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 
   .actions-item-icon { font-size: 0.85rem; width: 1.1rem; text-align: center; }

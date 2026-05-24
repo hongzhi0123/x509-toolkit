@@ -118,7 +118,7 @@
     vscode.postMessage({ type: 'copyToClipboard', value: event.detail });
   }
 
-  function handleExportCert(event: CustomEvent<{ pem: string; suggestedName: string }>): void {
+  function handleExportCert(event: CustomEvent<{ pem: string; suggestedName: string; format: 'pem' | 'der' }>): void {
     vscode.postMessage({ type: 'exportCert', ...event.detail });
   }
 

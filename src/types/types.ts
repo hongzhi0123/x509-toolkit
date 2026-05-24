@@ -88,6 +88,8 @@ export interface CertificateData {
   isSelfSigned: boolean;
   /** Present when this cert was loaded from a P12/PFX that included the matching private key */
   privateKey?: PrivateKeyInfo;
+  /** Format of the source file this certificate was loaded from */
+  sourceFormat?: 'pem' | 'der' | 'p12';
 }
 
 export interface CsrData {
@@ -209,7 +211,7 @@ export type WebviewToExtMsg =
   | { type: 'copyToClipboard'; value: string }
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
-  | { type: 'exportCert'; pem: string; suggestedName: string }
+  | { type: 'exportCert'; pem: string; suggestedName: string; format: 'pem' | 'der' }
   | { type: 'createP12'; certPems: string[]; suggestedName: string; keyPem?: string }
   | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
   | { type: 'signCsr'; csrPem: string }

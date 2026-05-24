@@ -25,6 +25,7 @@ export async function sendParsedPemText(
       sendCsr(panel, csrData);
     } else {
       const chain = await parsePEMChain(text);
+      chain.forEach(c => { c.sourceFormat = 'pem'; });
       sendCertificates(panel, chain, 0);
     }
   } catch (err: unknown) {
@@ -55,6 +56,7 @@ export async function sendParsedFile(
         return;
       }
       const certs = await parseP12(raw, password);
+      certs.forEach(c => { c.sourceFormat = 'p12'; });
       sendCertificates(panel, certs, 0);
       return;
     }
@@ -73,9 +75,11 @@ export async function sendParsedFile(
 
     if (asText.includes('-----BEGIN CERTIFICATE-----')) {
       const chain = await parsePEMChain(asText);
+      chain.forEach(c => { c.sourceFormat = 'pem'; });
       sendCertificates(panel, chain, 0);
     } else {
       const cert = await parseCertificate(raw);
+      cert.sourceFormat = 'der';
       sendCertificates(panel, [cert], 0);
     }
   } catch (err: unknown) {
