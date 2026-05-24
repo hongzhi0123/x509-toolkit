@@ -9,6 +9,7 @@ export * from './utils/derUtils';
 
 // Parsers
 export * from './parsers/certificateParser';
+export * from './parsers/crlParser';
 export * from './parsers/keyParser';
 export * from './parsers/p12Parser';
 export * from './parsers/qcStatements';

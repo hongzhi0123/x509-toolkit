@@ -84,6 +84,11 @@
         "command": "x509toolkit.generateKey",
         "title": "X.509 Toolkit: Generate Key Pair",
         "icon": "$(add)"
+      },
+      {
+        "command": "x509toolkit.openCrlFile",
+        "title": "X.509 Toolkit: Open CRL File",
+        "icon": "$(list-unordered)"
       }
     ],
     "menus": {
@@ -96,6 +101,11 @@
         {
           "command": "x509toolkit.openKeyFile",
           "when": "resourceExtname =~ /^\\.(key|pk8|p8|pub)$/i",
+          "group": "navigation@100"
+        },
+        {
+          "command": "x509toolkit.openCrlFile",
+          "when": "resourceExtname =~ /^\\.crl$/i",
           "group": "navigation@100"
         }
       ],
@@ -128,6 +138,9 @@
         },
         {
           "command": "x509toolkit.generateKey"
+        },
+        {
+          "command": "x509toolkit.openCrlFile"
         }
       ]
     }

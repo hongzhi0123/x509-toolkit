@@ -117,6 +117,53 @@ export interface CsrData {
   privateKeyDescription?: string;
 }
 
+// ─── Certificate Revocation List ─────────────────────────────────────────────
+
+export interface CrlRevokedEntry {
+  /** Colon-separated uppercase hex serial number */
+  serialNumber: string;
+  /** ISO-8601 revocation date */
+  revocationDate: string;
+  /** Human-readable reason string (e.g. "keyCompromise"), omitted if unspecified */
+  reason?: string;
+  /** ISO-8601 invalidity date from the Invalidity Date extension, if present */
+  invalidityDate?: string;
+}
+
+export interface CrlData {
+  /** CRL version: 1 (v1) or 2 (v2) */
+  version: number;
+  issuer: DistinguishedName;
+  signatureAlgorithm: string;
+  /** ISO-8601 */
+  thisUpdate: string;
+  /** ISO-8601 — absent on CRLs that never expire */
+  nextUpdate?: string;
+  /** Whether nextUpdate is in the past */
+  isExpired: boolean;
+  revokedCertificates: CrlRevokedEntry[];
+  /** CRL Number extension value as decimal string */
+  crlNumber?: string;
+  /** Authority Key Identifier as colon-separated hex */
+  authorityKeyIdentifier?: string;
+  /** Issuing Distribution Point URL(s), if present */
+  issuingDistributionPoints?: string[];
+  /** PEM-encoded CRL */
+  raw: string;
+  sourceFormat?: 'pem' | 'der';
+}
+
+// ─── CRL Viewer message protocol ─────────────────────────────────────────────
+
+export type CrlViewerToExtMsg =
+  | { type: 'crlViewerReady' }
+  | { type: 'copyToClipboard'; value: string };
+
+export type ExtToCrlViewerMsg =
+  | { type: 'crlLoading' }
+  | { type: 'crlData'; crl: CrlData }
+  | { type: 'crlError'; message: string };
+
 // ─── Certificate generation ─────────────────────────────────────────────────
 
 export type KeyAlgorithm = 'RSA-2048' | 'RSA-4096' | 'EC-P256' | 'EC-P384' | 'EC-P521';
