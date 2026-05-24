@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { generateKeyPair } from '../parsers/keyParser';
+import { generateKeyPair } from '@x509-toolkit/core';
 import { openKeyViewerWithKey } from './keyPanel';
-import type { ExtToKeyGenMsg, KeyGenToExtMsg, InputDialogFieldDef } from '../types/types';
+import type { ExtToKeyGenMsg, KeyGenToExtMsg, InputDialogFieldDef } from '@x509-toolkit/core';
 
 let keyGenPanelRef: vscode.WebviewPanel | undefined;
 
@@ -198,7 +198,7 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
           case 'keyGenViewKey': {
             if (!heldPrivKey || !heldPrivKeyPem) break;
             // Parse current key data for the viewer
-            const { data } = await import('../parsers/keyParser').then(m =>
+            const { data } = await import('@x509-toolkit/core').then(m =>
               Promise.resolve(m.parseKeyFile(Buffer.from(heldPrivKeyPem!, 'utf8'))),
             );
             openKeyViewerWithKey(context, data, heldPrivKey);

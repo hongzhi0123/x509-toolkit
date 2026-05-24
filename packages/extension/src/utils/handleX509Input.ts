@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import { parseCertificate, parsePEMChain, parseCsr } from '../parsers/certificateParser';
-import { parseP12 } from '../parsers/p12Parser';
+import { parseCertificate, parsePEMChain, parseCsr, parseP12 } from '@x509-toolkit/core';
 import {
   sendCertificates,
   sendCsr,

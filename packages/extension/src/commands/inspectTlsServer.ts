@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as tls from 'tls';
 import { getOrCreatePanel, sendLoading, sendCertificates, sendError } from '../panels/panelManager';
-import { parseCertificate } from '../parsers/certificateParser';
-import type { CertificateData, ExtToWebviewMsg, TlsConnectionInfo } from '../types/types';
+import { parseCertificate } from '@x509-toolkit/core';
+import type { CertificateData, ExtToWebviewMsg, TlsConnectionInfo } from '@x509-toolkit/core';
 
 /**
  * Parse a "host", "host:port" or "[ipv6]:port" string into host + port.

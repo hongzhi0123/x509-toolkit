@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { parseKeyFile, isEncryptedKey } from '../parsers/keyParser';
-import type { ExtToKeyViewerMsg, KeyViewerToExtMsg, StandaloneKeyData } from '../types/types';
+import { parseKeyFile, isEncryptedKey } from '@x509-toolkit/core';
+import type { ExtToKeyViewerMsg, KeyViewerToExtMsg, StandaloneKeyData } from '@x509-toolkit/core';
 
 let keyPanelRef: vscode.WebviewPanel | undefined;
 

@@ -1,9 +1,15 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import path from 'path';
 
 export default defineConfig({
   plugins: [svelte({ hot: !process.env.VITEST })],
+  resolve: {
+    alias: {
+      '@x509-toolkit/core': path.resolve(__dirname, '../core/src/index.ts')
+    }
+  },
   test: {
     environment: 'jsdom',
     globals: true,
@@ -15,7 +21,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../dist/webview',
+    outDir: '../extension/dist/webview',
     emptyOutDir: true,
     rollupOptions: {
       output: {

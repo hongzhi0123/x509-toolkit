@@ -8,9 +8,8 @@ import {
   AuthorityKeyIdentifierExtension,
   SubjectKeyIdentifierExtension,
 } from '@peculiar/x509';
-import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
-import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
-import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '../types/types';
+import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr } from '@x509-toolkit/core';
+import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '@x509-toolkit/core';
 import { openConvertPanel } from './convertPanel';
 
 let currentPanel: vscode.WebviewPanel | undefined;
@@ -554,7 +553,7 @@ export function getOrCreatePanel(
         vscode.window.showInformationMessage(`Signed certificate saved to ${saveUri.fsPath}`);
 
         // Show in viewer
-        const { parseP12 } = await import('../parsers/p12Parser');
+        const { parseP12 } = await import('@x509-toolkit/core');
         sendLoading(panel);
         try {
           const certs = await parseP12(p12Buf, p12Passphrase);

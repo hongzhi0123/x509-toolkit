@@ -18,6 +18,9 @@ const config = {
   },
   resolve: {
     extensions: ['.ts', '.js'],
+    alias: {
+      '@x509-toolkit/core': path.resolve(__dirname, '../core/src/index.ts')
+    },
     fallback: {}
   },
   module: {
@@ -25,7 +28,7 @@ const config = {
       {
         test: /\.ts$/,
         exclude: /node_modules/,
-        use: [{ loader: 'ts-loader' }]
+        use: [{ loader: 'ts-loader', options: { configFile: path.resolve(__dirname, 'tsconfig.json'), transpileOnly: true } }]
       }
     ]
   },

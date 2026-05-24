@@ -2,9 +2,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
-import { parseP12, createP12Buffer } from '../parsers/p12Parser';
-import type { ConvertToExtMsg, ExtToConvertMsg } from '../types/types';
+import { parseCertificate, parsePEMChain, parseP12, createP12Buffer } from '@x509-toolkit/core';
+import type { ConvertToExtMsg, ExtToConvertMsg } from '@x509-toolkit/core';
 
 let convertPanelRef: vscode.WebviewPanel | undefined;
 
