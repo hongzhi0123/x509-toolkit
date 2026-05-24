@@ -215,6 +215,7 @@ export type WebviewToExtMsg =
   | { type: 'exportPrivateKey'; keyPem: string; suggestedName: string }
   | { type: 'createP12'; certPems: string[]; suggestedName: string; keyPem?: string }
   | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
+  | { type: 'openCaCertFile'; topCertPem: string }
   | { type: 'signCsr'; csrPem: string }
   | { type: 'saveCsrFile' }
   | { type: 'savePrivateKey' }

@@ -35,6 +35,17 @@
   $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
   $: activeCert = displayChain[activeIndex] ?? null;
 
+  // Show the "no chain" banner when the topmost cert in the display chain is not self-signed
+  $: topCert = displayChain.length > 0 ? displayChain[displayChain.length - 1] : null;
+  $: showNoChainBanner = state === 'ready' && topCert !== null && !topCert.isSelfSigned;
+  $: bannerAiaUrls = showNoChainBanner
+    ? [...new Set((topCert?.extensions ?? []).flatMap(e => e.caIssuerUrls ?? []))]
+        .filter(url => !downloadedCerts.some(d => d.url === url))
+    : [];
+  $: noChainLabel = (chain.length === 1 && downloadedCerts.length === 0)
+    ? '🔗 No issuer chain loaded'
+    : '🔗 Root CA not loaded';
+
   onMount(() => {
     window.addEventListener('message', (event: MessageEvent<ExtToWebviewMsg>) => {
       const msg = event.data;
@@ -72,7 +83,10 @@
         case 'caIssuerError': {
           loadingUrls.delete(msg.url);
           loadingUrls = loadingUrls;
-          errorMessage = `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
+          // For file:// errors, the message is already self-explanatory; for AIA URLs keep the URL context
+          errorMessage = msg.url.startsWith('file://')
+            ? msg.message
+            : `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
           break;
         }
         case 'privateKeyImported': {
@@ -131,11 +145,19 @@
   }
 
   function handleLoadCaIssuer(event: CustomEvent<string>): void {
-    const url = event.detail;
+    loadCaIssuerUrl(event.detail);
+  }
+
+  function loadCaIssuerUrl(url: string): void {
     if (loadingUrls.has(url) || downloadedCerts.some(d => d.url === url)) return;
     loadingUrls.add(url);
     loadingUrls = loadingUrls;
     vscode.postMessage({ type: 'downloadCaIssuer', url });
+  }
+
+  function handleOpenCaFile(): void {
+    if (!topCert) return;
+    vscode.postMessage({ type: 'openCaCertFile', topCertPem: topCert.raw });
   }
 
   function handleImportPrivateKey(event: CustomEvent<{ certIndex: number; spkiPem: string }>): void {
@@ -230,6 +252,30 @@
       <div class="ca-issuer-error">
         <span>⚠️ {errorMessage}</span>
         <button class="dismiss-btn" on:click={() => errorMessage = ''}>✕</button>
+      </div>
+    {/if}
+    {#if showNoChainBanner}
+      <div class="no-chain-banner">
+        <span class="no-chain-label">{noChainLabel}</span>
+        <div class="no-chain-actions">
+          <button class="no-chain-btn" on:click={handleOpenCaFile}>
+            📂 Browse for CA certificate…
+          </button>
+          {#each bannerAiaUrls as url}
+            <button
+              class="no-chain-btn no-chain-btn-aia"
+              disabled={loadingUrls.has(url)}
+              on:click={() => loadCaIssuerUrl(url)}
+              title={url}
+            >
+              {#if loadingUrls.has(url)}
+                ⏳ Loading…
+              {:else}
+                ↓ Fetch from AIA
+              {/if}
+            </button>
+          {/each}
+        </div>
       </div>
     {/if}
     {#if displayChain.length > 1}
@@ -484,4 +530,51 @@
     flex-shrink: 0;
   }
   .dismiss-btn:hover { opacity: 1; }
+
+  /* ─── No-chain banner ─── */
+  .no-chain-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.45rem 1rem;
+    background: rgba(137,180,250,0.07);
+    border-bottom: 1px solid rgba(137,180,250,0.2);
+    font-size: 0.8rem;
+  }
+
+  .no-chain-label {
+    color: var(--vscode-descriptionForeground, #888);
+    flex-shrink: 0;
+  }
+
+  .no-chain-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .no-chain-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    color: var(--vscode-button-secondaryForeground, #cdd6f4);
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: var(--vscode-font-family);
+  }
+
+  .no-chain-btn:hover:not(:disabled) {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+  }
+
+  .no-chain-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
 </style>

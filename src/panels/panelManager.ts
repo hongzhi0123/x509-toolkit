@@ -3,11 +3,34 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
-import { parseCertificate } from '../parsers/certificateParser';
+import {
+  X509Certificate,
+  AuthorityKeyIdentifierExtension,
+  SubjectKeyIdentifierExtension,
+} from '@peculiar/x509';
+import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
 import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
 import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef } from '../types/types';
 
 let currentPanel: vscode.WebviewPanel | undefined;
+
+/**
+ * Returns true if `issuerCandidate` is a valid issuer of `subject`.
+ * Checks subject/issuer DN equality, then AKI/SKI key ID if both are present.
+ */
+function isValidIssuer(subject: X509Certificate, issuerCandidate: X509Certificate): boolean {
+  if (issuerCandidate.subject !== subject.issuer) {
+    return false;
+  }
+  try {
+    const aki = subject.getExtension(AuthorityKeyIdentifierExtension);
+    const ski = issuerCandidate.getExtension(SubjectKeyIdentifierExtension);
+    if (aki?.keyId && ski?.keyId) {
+      return aki.keyId === ski.keyId;
+    }
+  } catch { /* ignore — extension parsing is best-effort */ }
+  return true;
+}
 
 // CSR PEM and private key held when a CSR is generated via Create Cert panel.
 // The key is NEVER sent to the webview; only a description string is passed.
@@ -146,6 +169,56 @@ export function getOrCreatePanel(
             };
             panel.webview.postMessage(reply);
           });
+      } else if (msg.type === 'openCaCertFile') {
+        const { topCertPem } = msg;
+        const uris = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Open CA Certificate',
+          title: 'Open CA / Issuer Certificate',
+          filters: {
+            'Certificate Files': ['pem', 'crt', 'cer', 'der'],
+            'All Files': ['*'],
+          },
+        });
+        if (!uris?.[0]) return;
+        const filePath = uris[0].fsPath;
+        const fileUrl = `file://${filePath.replace(/\\/g, '/')}`;
+        const sendFileErr = (message: string) =>
+          panel.webview.postMessage({ type: 'caIssuerError', url: fileUrl, message } as ExtToWebviewMsg);
+        try {
+          const buf = fs.readFileSync(filePath);
+          const asText = buf.toString('utf8').trim();
+          const certs = asText.includes('-----BEGIN CERTIFICATE-----')
+            ? await parsePEMChain(asText)
+            : [await parseCertificate(buf)];
+
+          // Validate that the certs form a proper chain extension
+          const topX509 = new X509Certificate(topCertPem);
+          let prevX509 = topX509;
+          for (let i = 0; i < certs.length; i++) {
+            const candidate = new X509Certificate(certs[i].raw);
+            if (!isValidIssuer(prevX509, candidate)) {
+              const expected = prevX509.issuer;
+              const got = candidate.subject;
+              sendFileErr(
+                i === 0
+                  ? `Not the correct issuer.\nExpected subject: "${expected}"\nSelected certificate subject: "${got}"`
+                  : `Certificate ${i + 1} in the file is not the issuer of certificate ${i}.\nExpected: "${prevX509.issuer}"\nGot: "${got}"`,
+              );
+              return;
+            }
+            prevX509 = candidate;
+          }
+
+          // All valid — send each cert to the webview
+          certs.forEach((cert, idx) => {
+            const url = certs.length > 1 ? `${fileUrl}#${idx}` : fileUrl;
+            const reply: ExtToWebviewMsg = { type: 'caIssuerCert', cert, url };
+            panel.webview.postMessage(reply);
+          });
+        } catch (err) {
+          sendFileErr((err as Error).message ?? String(err));
+        }
       } else if (msg.type === 'exportCert') {
         const { pem, suggestedName, format } = msg;
         const filters: { [name: string]: string[] } = format === 'der'
