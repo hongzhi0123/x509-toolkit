@@ -99,6 +99,19 @@
 
   let spkiPemOpen = false;
   let privKeyPemOpen = false;
+  let actionsOpen = false;
+
+  function toggleActions() { actionsOpen = !actionsOpen; }
+  function closeActions() { actionsOpen = false; }
+
+  /** Svelte action: fires callback when a click occurs outside the node. */
+  function clickOutside(node: HTMLElement, handler: () => void) {
+    function onDocClick(e: MouseEvent) {
+      if (!node.contains(e.target as Node)) handler();
+    }
+    document.addEventListener('mousedown', onDocClick, true);
+    return { destroy() { document.removeEventListener('mousedown', onDocClick, true); } };
+  }
 
   $: effectivePrivateKey = cert.privateKey ?? importedPrivateKey;
 </script>
@@ -129,14 +142,23 @@
     </div>
     <div class="cert-header-right">
       <ValidityIndicator validity={cert.validity} />
-      {#if !cert.isCA}
-        <button class="export-btn p12-btn" title="Create P12 / PFX with chain" on:click={createP12}>
-          🔒 Create P12
+      <div class="actions-menu" use:clickOutside={closeActions}>
+        <button class="actions-trigger" on:click={toggleActions} aria-haspopup="true" aria-expanded={actionsOpen}>
+          Actions <span class="actions-chevron" class:open={actionsOpen}>▾</span>
         </button>
-      {/if}
-      <button class="export-btn" title="Export certificate" on:click={exportCert}>
-        ⤓ Export
-      </button>
+        {#if actionsOpen}
+          <div class="actions-dropdown" role="menu">
+            <button class="actions-item" role="menuitem" on:click={() => { exportCert(); closeActions(); }}>
+              <span class="actions-item-icon">⤓</span> Export Certificate
+            </button>
+            {#if !cert.isCA}
+              <button class="actions-item" role="menuitem" on:click={() => { createP12(); closeActions(); }}>
+                <span class="actions-item-icon">🔒</span> Create P12 / PFX
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
     </div>
   </header>
 
@@ -362,7 +384,12 @@
     flex-shrink: 0;
   }
 
-  .export-btn {
+  /* ── Actions dropdown ── */
+  .actions-menu {
+    position: relative;
+  }
+
+  .actions-trigger {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -377,20 +404,51 @@
     white-space: nowrap;
     transition: background 0.12s, border-color 0.12s;
   }
-  .export-btn:hover {
+  .actions-trigger:hover {
     background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
     border-color: var(--vscode-focusBorder, rgba(255,255,255,0.3));
   }
 
-  .p12-btn {
-    background: var(--vscode-button-background, #7c3aed);
-    color: var(--vscode-button-foreground, #fff);
-    border-color: transparent;
+  .actions-chevron { font-size: 0.65rem; transition: transform 0.15s; }
+  .actions-chevron.open { transform: rotate(180deg); }
+
+  .actions-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 100;
+    min-width: 180px;
+    background: var(--vscode-menu-background, var(--vscode-editorWidget-background, #252526));
+    border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, rgba(255,255,255,0.15)));
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column;
   }
-  .p12-btn:hover {
-    background: var(--vscode-button-hoverBackground, #6d28d9);
-    border-color: transparent;
+
+  .actions-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: transparent;
+    color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+    text-align: left;
+    width: 100%;
+    transition: background 0.1s;
   }
+  .actions-item:hover {
+    background: var(--vscode-menu-selectionBackground, rgba(255,255,255,0.1));
+    color: var(--vscode-menu-selectionForeground, var(--vscode-editor-foreground));
+  }
+
+  .actions-item-icon { font-size: 0.85rem; width: 1.1rem; text-align: center; }
 
   .cert-header-left {
     display: flex;
