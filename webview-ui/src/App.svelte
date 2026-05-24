@@ -122,6 +122,10 @@
     vscode.postMessage({ type: 'exportCert', ...event.detail });
   }
 
+  function handleExportPrivateKey(event: CustomEvent<{ keyPem: string; suggestedName: string }>): void {
+    vscode.postMessage({ type: 'exportPrivateKey', ...event.detail });
+  }
+
   function handleCreateP12(event: CustomEvent<{ certPems: string[]; suggestedName: string }>): void {
     vscode.postMessage({ type: 'createP12', ...event.detail });
   }
@@ -261,6 +265,7 @@
         topOffset={displayChain.length > 1 ? chainNavHeight : 0}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
+        on:exportPrivateKey={handleExportPrivateKey}
         on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
         on:importPrivateKey={handleImportPrivateKey}

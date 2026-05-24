@@ -17,7 +17,7 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -37,6 +37,13 @@
     // Use the private key already present in the cert (from P12 import or manual import)
     const keyPem = cert.privateKey?.pem ?? importedPrivateKey?.pem;
     dispatch('createP12', { certPems: allPems, suggestedName: `${safeName}.p12`, keyPem });
+  }
+
+  function exportPrivKey(): void {
+    const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
+    const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    const keyPem = (cert.privateKey ?? importedPrivateKey)!.pem;
+    dispatch('exportPrivateKey', { keyPem, suggestedName: `${safeName}.key` });
   }
 
   function formatDate(iso: string): string {
@@ -175,6 +182,16 @@
                 on:click={() => { createP12(); closeActions(); }}
               >
                 <span class="actions-item-icon">🔒</span> Create P12 / PFX
+              </button>
+            {/if}
+            {#if effectivePrivateKey}
+              <button
+                class="actions-item"
+                role="menuitem"
+                title="Save private key as PKCS#8 PEM"
+                on:click={() => { exportPrivKey(); closeActions(); }}
+              >
+                <span class="actions-item-icon">🗝️</span> Export Private Key
               </button>
             {/if}
           </div>

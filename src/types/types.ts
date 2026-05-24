@@ -212,6 +212,7 @@ export type WebviewToExtMsg =
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
   | { type: 'exportCert'; pem: string; suggestedName: string; format: 'pem' | 'der' }
+  | { type: 'exportPrivateKey'; keyPem: string; suggestedName: string }
   | { type: 'createP12'; certPems: string[]; suggestedName: string; keyPem?: string }
   | { type: 'importPrivateKey'; certIndex: number; spkiPem: string }
   | { type: 'signCsr'; csrPem: string }

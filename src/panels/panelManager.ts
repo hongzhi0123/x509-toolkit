@@ -171,6 +171,18 @@ export function getOrCreatePanel(
           fs.writeFileSync(uri.fsPath, data);
           vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
         });
+      } else if (msg.type === 'exportPrivateKey') {
+        const { keyPem, suggestedName } = msg;
+        vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(suggestedName),
+          filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+          saveLabel: 'Export Private Key',
+          title: 'Export Private Key',
+        }).then(uri => {
+          if (!uri) return;
+          fs.writeFileSync(uri.fsPath, Buffer.from(keyPem, 'utf8'));
+          vscode.window.showInformationMessage(`Private key exported to ${uri.fsPath}`);
+        });
       } else if (msg.type === 'importPrivateKey') {
         const { certIndex, spkiPem } = msg;
         const keyUris = await vscode.window.showOpenDialog({
