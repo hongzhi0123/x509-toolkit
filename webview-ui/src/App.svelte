@@ -438,13 +438,14 @@
     gap: 0.35rem;
     padding: 0.4rem 0.8rem;
     background: none;
-    border: none;
+    border: 1px solid transparent;
     border-bottom: 2px solid transparent;
+    border-radius: 5px 5px 0 0;
     color: var(--vscode-tab-inactiveForeground, #888);
     cursor: pointer;
     font-size: 0.8rem;
     font-family: var(--vscode-font-family);
-    transition: color 0.12s, border-color 0.12s;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
     max-width: 180px;
   }
 
@@ -455,7 +456,15 @@
 
   .chain-tab.active {
     color: var(--vscode-editor-foreground);
-    border-bottom-color: var(--vscode-button-background, #7c3aed);
+    font-weight: 600;
+    background: var(--vscode-editor-background, #1e1e2e);
+    border-color: var(--vscode-button-background, #7c3aed);
+    border-bottom-color: var(--vscode-editor-background, #1e1e2e);
+  }
+
+  .chain-tab.active .chain-index {
+    background: var(--vscode-button-background, #7c3aed);
+    color: var(--vscode-button-foreground, #fff);
   }
 
   .chain-index {

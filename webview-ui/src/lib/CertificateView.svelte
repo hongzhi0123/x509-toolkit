@@ -177,8 +177,12 @@
               <button
                 class="actions-item"
                 role="menuitem"
-                disabled={cert.sourceFormat === 'p12'}
-                title={cert.sourceFormat === 'p12' ? 'Already a P12 file' : 'Package certificate and chain into a P12 / PFX'}
+                disabled={cert.sourceFormat === 'p12' && chainPems.length <= 1}
+                title={cert.sourceFormat === 'p12' && chainPems.length <= 1
+                  ? 'Already a P12 file'
+                  : cert.sourceFormat === 'p12'
+                    ? 'Re-create P12 with the loaded CA chain'
+                    : 'Package certificate and chain into a P12 / PFX'}
                 on:click={() => { createP12(); closeActions(); }}
               >
                 <span class="actions-item-icon">🔒</span> Create P12 / PFX
