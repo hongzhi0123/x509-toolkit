@@ -69,6 +69,11 @@
         "command": "x509toolkit.inspectTlsServer",
         "title": "X.509 Toolkit: Inspect TLS Server Certificate",
         "icon": "$(plug)"
+      },
+      {
+        "command": "x509toolkit.convertFormat",
+        "title": "X.509 Toolkit: Convert Certificate Format",
+        "icon": "$(arrow-swap)"
       }
     ],
     "menus": {
@@ -99,6 +104,9 @@
         },
         {
           "command": "x509toolkit.inspectTlsServer"
+        },
+        {
+          "command": "x509toolkit.convertFormat"
         }
       ]
     }

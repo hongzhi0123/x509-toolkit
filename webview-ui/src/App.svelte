@@ -178,6 +178,10 @@
     vscode.postMessage({ type: 'importPrivateKey', ...event.detail });
   }
 
+  function handleOpenConvertHub(): void {
+    vscode.postMessage({ type: 'openConvertHub' });
+  }
+
   function handlePassphraseSubmit(event: CustomEvent<string>): void {
     if (!passphraseRequest) return;
     const { requestId } = passphraseRequest;
@@ -357,6 +361,7 @@
         on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
         on:importPrivateKey={handleImportPrivateKey}
+        on:openConvertHub={handleOpenConvertHub}
       />
     {/key}
   {/if}

@@ -17,7 +17,7 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string } }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -198,6 +198,15 @@
                 <span class="actions-item-icon">🗝️</span> Export Private Key
               </button>
             {/if}
+            <hr class="actions-separator" />
+            <button
+              class="actions-item"
+              role="menuitem"
+              title="Open Format Conversion Hub"
+              on:click={() => { dispatch('openConvertHub'); closeActions(); }}
+            >
+              <span class="actions-item-icon">🔄</span> Open Conversion Hub…
+            </button>
           </div>
         {/if}
       </div>
@@ -495,6 +504,7 @@
   }
 
   .actions-item-icon { font-size: 0.85rem; width: 1.1rem; text-align: center; }
+  .actions-separator { border: none; border-top: 1px solid var(--vscode-menu-separatorBackground, rgba(128,128,128,0.35)); margin: 4px 8px; }
 
   .cert-header-left {
     display: flex;

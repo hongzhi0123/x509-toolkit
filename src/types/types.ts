@@ -237,4 +237,24 @@ export type WebviewToExtMsg =
   /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
   | { type: 'passphraseResponse'; requestId: string; passphrase: string | null }
   /** Response to 'requestInputDialog'; values is null if the user cancelled */
-  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null };
+  | { type: 'inputDialogResponse'; requestId: string; values: Record<string, string> | null }
+  /** Opens the Format Conversion Hub panel */
+  | { type: 'openConvertHub' };
+
+// ─── Format Conversion Hub ───────────────────────────────────────────────────
+
+export type ConvertToExtMsg =
+  | { type: 'convertReady' }
+  /** Pick a single file and store it under slotId */
+  | { type: 'convertPickFile'; slotId: string; filters: Record<string, string[]> }
+  /** Pick multiple files and store them under slotId_0, slotId_1, … */
+  | { type: 'convertPickFiles'; slotId: string; filters: Record<string, string[]> }
+  | { type: 'convertExecuteExtractP12'; passphrase: string; outputMode: 'individual' | 'bundle'; includeKey: boolean }
+  | { type: 'convertExecuteBuildP12'; passphrase: string; includeKey: boolean }
+  | { type: 'convertExecuteConvertFormat'; assetType: 'cert' | 'key'; direction: 'pem-to-der' | 'der-to-pem' }
+  | { type: 'convertExecuteBundleChain'; orderedSlotIds: string[] };
+
+export type ExtToConvertMsg =
+  | { type: 'convertFileSelected'; slotId: string; fileName: string; fileCount?: number }
+  | { type: 'convertResult'; message: string }
+  | { type: 'convertError'; message: string };

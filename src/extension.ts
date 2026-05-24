@@ -4,6 +4,7 @@ import { showFromSelection } from './commands/showFromSelection';
 import { openFile } from './commands/openFile';
 import { openFromExplorer } from './commands/openFromExplorer';
 import { inspectTlsServer } from './commands/inspectTlsServer';
+import { convertFormat } from './commands/convertFormat';
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -11,7 +12,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('x509toolkit.openFile', openFile(context)),
     vscode.commands.registerCommand('x509toolkit.createCertificate', openCreateCertPanel(context)),
     vscode.commands.registerCommand('x509toolkit.openFromExplorer', openFromExplorer(context)),
-    vscode.commands.registerCommand('x509toolkit.inspectTlsServer', inspectTlsServer(context))
+    vscode.commands.registerCommand('x509toolkit.inspectTlsServer', inspectTlsServer(context)),
+    vscode.commands.registerCommand('x509toolkit.convertFormat', convertFormat(context))
   );
 }
 

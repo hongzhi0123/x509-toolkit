@@ -11,6 +11,7 @@ import {
 import { parseCertificate, parsePEMChain } from '../parsers/certificateParser';
 import { createP12Buffer, loadAndValidatePrivateKey, signCsr } from '../parsers/p12Parser';
 import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '../types/types';
+import { openConvertPanel } from './convertPanel';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 
@@ -633,6 +634,8 @@ export function getOrCreatePanel(
         if (!keyUri) return;
         fs.writeFileSync(keyUri.fsPath, pendingViewerCsrKeyPem, 'utf8');
         vscode.window.showInformationMessage(`Saved: ${csrUri.fsPath} and ${keyUri.fsPath}`);
+      } else if (msg.type === 'openConvertHub') {
+        openConvertPanel(context);
       }
     },
     undefined,
