@@ -5,7 +5,7 @@ import {
   sendCsr,
   sendError,
   requestPassphraseFromWebview,
-} from '../panels/panelManager';
+} from '../panels/mainViewerPanel';
 
 /**
  * Parses PEM text as a CSR or certificate chain and sends the result to the panel.

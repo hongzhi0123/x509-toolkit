@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as tls from 'tls';
-import { getOrCreatePanel, sendLoading, sendCertificates, sendError } from '../panels/panelManager';
+import { getOrCreatePanel, sendLoading, sendCertificates, sendError } from '../panels/mainViewerPanel';
 import { parseCertificate } from '@x509-toolkit/core';
 import type { CertificateData, ExtToWebviewMsg, TlsConnectionInfo } from '@x509-toolkit/core';
 

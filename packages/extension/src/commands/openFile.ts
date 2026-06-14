@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { getOrCreatePanel, sendLoading, sendError } from '../panels/panelManager';
+import { getOrCreatePanel, sendLoading, sendError } from '../panels/mainViewerPanel';
 import { sendParsedFile } from '../utils/handleX509Input';
 
 export function openFile(

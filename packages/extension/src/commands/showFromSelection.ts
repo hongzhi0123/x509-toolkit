@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getOrCreatePanel, sendLoading } from '../panels/panelManager';
+import { getOrCreatePanel, sendLoading } from '../panels/mainViewerPanel';
 import { sendParsedPemText } from '../utils/handleX509Input';
 
 export function showFromSelection(

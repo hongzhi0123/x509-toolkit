@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr } from '@x509-toolkit/core';
-import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './panelManager';
+import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './mainViewerPanel';
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '@x509-toolkit/core';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
