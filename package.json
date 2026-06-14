@@ -11,7 +11,9 @@
     "build:ext": "npm run build -w packages/extension",
     "watch:ext": "npm run watch -w packages/extension",
     "watch:webview": "npm run dev -w packages/webview-ui",
-    "test": "npm test -w packages/core",
+    "test": "npm test -w packages/core && npm test -w packages/extension",
+    "test:core": "npm test -w packages/core",
+    "test:ext": "npm test -w packages/extension",
     "package": "npm run build && npm run package -w packages/extension"
   }
 }

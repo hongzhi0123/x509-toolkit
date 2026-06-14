@@ -149,11 +149,18 @@
     "vscode:prepublish": "npm run build",
     "build": "webpack --mode production",
     "watch": "webpack --mode development --watch",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node ./out/test/test/runTest.js"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
+    "@types/sinon": "^21.0.1",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
+    "mocha": "^11.7.6",
+    "sinon": "^22.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.3",
     "webpack": "^5.90.0",

@@ -3,52 +3,69 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
-import {
-  X509Certificate,
-  AuthorityKeyIdentifierExtension,
-  SubjectKeyIdentifierExtension,
-} from '@peculiar/x509';
-import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr } from '@x509-toolkit/core';
+import { X509Certificate } from '@peculiar/x509';
+import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr, formatIssuerChainFailure, validateIssuerChain } from '@x509-toolkit/core';
 import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '@x509-toolkit/core';
+import { requestInputDialog, requestPassphrase, resolveInputDialogRequest, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
+import { routeViewerMessage } from '../utils/messageRouterUtils';
+import { exportCertificate, exportPrivateKey, savePrivateKeyFromMemory, saveCsrFromMemory, saveCsrAndPrivateKey, type ViewerFileActionHost } from '../utils/fileActionsUtils';
+import { importPrivateKey, type KeyImportHost } from '../utils/keyImportUtils';
 import { openConvertPanel } from './convertPanel';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let extensionContext: vscode.ExtensionContext;
-
-/**
- * Returns true if `issuerCandidate` is a valid issuer of `subject`.
- * Checks subject/issuer DN equality, then AKI/SKI key ID if both are present.
- */
-function isValidIssuer(subject: X509Certificate, issuerCandidate: X509Certificate): boolean {
-  if (issuerCandidate.subject !== subject.issuer) {
-    return false;
-  }
-  try {
-    const aki = subject.getExtension(AuthorityKeyIdentifierExtension);
-    const ski = issuerCandidate.getExtension(SubjectKeyIdentifierExtension);
-    if (aki?.keyId && ski?.keyId) {
-      return aki.keyId === ski.keyId;
-    }
-  } catch { /* ignore — extension parsing is best-effort */ }
-  return true;
-}
 
 // CSR PEM and private key held when a CSR is generated via Create Cert panel.
 // The key is NEVER sent to the webview; only a description string is passed.
 let pendingViewerCsrPem: string | undefined;
 let pendingViewerCsrKeyPem: string | undefined;
 
-// ------------------------------------------------------------------
-// Passphrase request bridge
-// Maps requestId → resolve function of the awaiting Promise
-// ------------------------------------------------------------------
-const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
+function createViewerFileActionHost(panel: vscode.WebviewPanel): ViewerFileActionHost {
+  return {
+    showSaveDialog: async (options) => {
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(options.defaultPath),
+        filters: options.filters,
+        saveLabel: options.saveLabel,
+        title: options.title,
+      });
+      return uri?.fsPath;
+    },
+    writeFile: (filePath, data, encoding) => {
+      if (typeof data === 'string') {
+        fs.writeFileSync(filePath, data, encoding);
+        return;
+      }
+      fs.writeFileSync(filePath, data);
+    },
+    showInformationMessage: (message) => {
+      vscode.window.showInformationMessage(message);
+    },
+    showWarningMessage: (message) => {
+      vscode.window.showWarningMessage(message);
+    },
+    requestInputDialog: (title, fields, options) => requestInputDialogFromWebview(panel, title, fields, options),
+  };
+}
 
-// ------------------------------------------------------------------
-// Generic input dialog bridge
-// Maps requestId → resolve function of the awaiting Promise
-// ------------------------------------------------------------------
-const pendingInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
+function createKeyImportHost(panel: vscode.WebviewPanel): KeyImportHost {
+  return {
+    showOpenDialog: async (options) => {
+      const uris = await vscode.window.showOpenDialog({
+        canSelectMany: options.canSelectMany,
+        openLabel: options.openLabel,
+        title: options.title,
+        filters: options.filters,
+      });
+      return uris?.[0]?.fsPath;
+    },
+    readFile: (filePath) => fs.readFileSync(filePath),
+    requestPassphrase: (fileName) => requestPassphraseFromWebview(panel, fileName),
+    postMessage: (message) => {
+      panel.webview.postMessage(message);
+    },
+  };
+}
 
 export function requestInputDialogFromWebview(
   panel: vscode.WebviewPanel,
@@ -56,12 +73,7 @@ export function requestInputDialogFromWebview(
   fields: InputDialogFieldDef[],
   options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string }
 ): Promise<Record<string, string> | null> {
-  const requestId = `idlg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise(resolve => {
-    pendingInputDialogRequests.set(requestId, resolve);
-    const msg: ExtToWebviewMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    panel.webview.postMessage(msg);
-  });
+  return requestInputDialog(panel.webview, title, fields, options);
 }
 
 export function requestPassphraseFromWebview(
@@ -69,12 +81,7 @@ export function requestPassphraseFromWebview(
   fileName: string,
   options?: { title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean }
 ): Promise<string | null> {
-  const requestId = `pp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise<string | null>(resolve => {
-    pendingPassphraseRequests.set(requestId, resolve);
-    const msg: ExtToWebviewMsg = { type: 'requestPassphrase', requestId, fileName, ...options };
-    panel.webview.postMessage(msg);
-  });
+  return requestPassphrase(panel.webview, fileName, options);
 }
 
 function downloadBytesFromUrl(url: string, redirectsLeft = 3): Promise<Buffer> {
@@ -139,24 +146,7 @@ export function getOrCreatePanel(
   extensionContext = context;
 
   panel.webview.onDidReceiveMessage(
-    async (msg: WebviewToExtMsg) => {
-      switch (msg.type) {
-        case 'copyToClipboard': return handleCopyToClipboard(panel, msg);
-        case 'passphraseResponse': return handlePassphraseResponse(panel, msg);
-        case 'inputDialogResponse': return handleInputDialogResponse(panel, msg);
-        case 'downloadCaIssuer': return handleDownloadCaIssuer(panel, msg);
-        case 'openCaCertFile': return handleOpenCaCertFile(panel, msg);
-        case 'exportCert': return handleExportCert(panel, msg);
-        case 'exportPrivateKey': return handleExportPrivateKey(panel, msg);
-        case 'importPrivateKey': return handleImportPrivateKey(panel, msg);
-        case 'createP12': return handleCreateP12(panel, msg);
-        case 'signCsr': return handleSignCsr(panel, msg);
-        case 'savePrivateKey': return handleSavePrivateKey(panel, msg);
-        case 'saveCsrFile': return handleSaveCsrFile(panel, msg);
-        case 'saveBothFiles': return handleSaveBothFiles(panel, msg);
-        case 'openConvertHub': return handleOpenConvertHub(panel, msg);
-      }
-    },
+    (msg: WebviewToExtMsg) => { handleWebviewMessage(panel, msg); },
     undefined,
     context.subscriptions
   );
@@ -212,6 +202,32 @@ export function sendError(panel: vscode.WebviewPanel, message: string): void {
 }
 
 // ============================================================
+// Message dispatch
+// ============================================================
+
+export async function handleWebviewMessage(
+  panel: vscode.WebviewPanel,
+  msg: WebviewToExtMsg
+): Promise<void> {
+  return routeViewerMessage(msg, {
+    copyToClipboard: (message) => handleCopyToClipboard(panel, message),
+    passphraseResponse: (message) => handlePassphraseResponse(panel, message),
+    inputDialogResponse: (message) => handleInputDialogResponse(panel, message),
+    downloadCaIssuer: (message) => handleDownloadCaIssuer(panel, message),
+    openCaCertFile: (message) => handleOpenCaCertFile(panel, message),
+    exportCert: (message) => handleExportCert(panel, message),
+    exportPrivateKey: (message) => handleExportPrivateKey(panel, message),
+    importPrivateKey: (message) => handleImportPrivateKey(panel, message),
+    createP12: (message) => handleCreateP12(panel, message),
+    signCsr: (message) => handleSignCsr(panel, message),
+    savePrivateKey: (message) => handleSavePrivateKey(panel, message),
+    saveCsrFile: (message) => handleSaveCsrFile(panel, message),
+    saveBothFiles: (message) => handleSaveBothFiles(panel, message),
+    openConvertHub: (message) => handleOpenConvertHub(panel, message),
+  });
+}
+
+// ============================================================
 // Message handlers
 // ============================================================
 
@@ -227,22 +243,14 @@ async function handlePassphraseResponse(
   _panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'passphraseResponse' }
 ): Promise<void> {
-  const resolve = pendingPassphraseRequests.get(msg.requestId);
-  if (resolve) {
-    pendingPassphraseRequests.delete(msg.requestId);
-    resolve(msg.passphrase);
-  }
+  resolvePassphraseRequest(msg.requestId, msg.passphrase);
 }
 
 async function handleInputDialogResponse(
   _panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'inputDialogResponse' }
 ): Promise<void> {
-  const resolve = pendingInputDialogRequests.get(msg.requestId);
-  if (resolve) {
-    pendingInputDialogRequests.delete(msg.requestId);
-    resolve(msg.values);
-  }
+  resolveInputDialogRequest(msg.requestId, msg.values);
 }
 
 async function handleDownloadCaIssuer(
@@ -292,22 +300,14 @@ async function handleOpenCaCertFile(
       ? await parsePEMChain(asText)
       : [await parseCertificate(buf)];
 
-    // Validate that the certs form a proper chain extension
     const topX509 = new X509Certificate(topCertPem);
-    let prevX509 = topX509;
-    for (let i = 0; i < certs.length; i++) {
-      const candidate = new X509Certificate(certs[i].raw);
-      if (!isValidIssuer(prevX509, candidate)) {
-        const expected = prevX509.issuer;
-        const got = candidate.subject;
-        sendFileErr(
-          i === 0
-            ? `Not the correct issuer.\nExpected subject: "${expected}"\nSelected certificate subject: "${got}"`
-            : `Certificate ${i + 1} in the file is not the issuer of certificate ${i}.\nExpected: "${prevX509.issuer}"\nGot: "${got}"`,
-        );
-        return;
-      }
-      prevX509 = candidate;
+    const failure = validateIssuerChain(
+      topX509,
+      certs.map(cert => new X509Certificate(cert.raw))
+    );
+    if (failure) {
+      sendFileErr(formatIssuerChainFailure(failure));
+      return;
     }
 
     // All valid — send each cert to the webview
@@ -325,115 +325,21 @@ async function handleExportCert(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'exportCert' }
 ): Promise<void> {
-  const { pem, suggestedName, format } = msg;
-  const filters: { [name: string]: string[] } = format === 'der'
-    ? { 'DER Certificate': ['der', 'cer'] }
-    : { 'PEM Certificate': ['pem', 'crt', 'cer'] };
-  const uri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(suggestedName),
-    filters,
-    saveLabel: 'Export Certificate',
-    title: `Export Certificate as ${format.toUpperCase()}`,
-  });
-  if (!uri) return;
-  let data: Buffer;
-  if (format === 'der') {
-    const b64 = pem
-      .replace(/-----BEGIN CERTIFICATE-----/g, '')
-      .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\s+/g, '');
-    data = Buffer.from(b64, 'base64');
-  } else {
-    data = Buffer.from(pem, 'utf8');
-  }
-  fs.writeFileSync(uri.fsPath, data);
-  vscode.window.showInformationMessage(`Certificate exported to ${uri.fsPath}`);
+  return exportCertificate(createViewerFileActionHost(panel), msg);
 }
 
 async function handleExportPrivateKey(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'exportPrivateKey' }
 ): Promise<void> {
-  const { keyPem, suggestedName } = msg;
-  const uri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(suggestedName),
-    filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
-    saveLabel: 'Export Private Key',
-    title: 'Export Private Key',
-  });
-  if (!uri) return;
-  fs.writeFileSync(uri.fsPath, Buffer.from(keyPem, 'utf8'));
-  vscode.window.showInformationMessage(`Private key exported to ${uri.fsPath}`);
+  return exportPrivateKey(createViewerFileActionHost(panel), msg);
 }
 
 async function handleImportPrivateKey(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'importPrivateKey' }
 ): Promise<void> {
-  const { certIndex, spkiPem } = msg;
-  const keyUris = await vscode.window.showOpenDialog({
-    canSelectMany: false,
-    openLabel: 'Import Private Key',
-    title: 'Select Private Key File (PEM or DER)',
-    filters: {
-      'Private Key': ['pem', 'key', 'der', 'pk8'],
-      'All Files': ['*'],
-    },
-  });
-  if (!keyUris?.[0]) return;
-  const keyBuf = fs.readFileSync(keyUris[0].fsPath);
-
-  // Detect encrypted PEM upfront so we can ask for a passphrase before parsing
-  const keyText = keyBuf.toString('utf8');
-  const isEncryptedPem =
-    keyText.includes('BEGIN ENCRYPTED PRIVATE KEY') ||
-    /Proc-Type:\s*4,ENCRYPTED/i.test(keyText);
-
-  let passphrase: string | undefined;
-  if (isEncryptedPem) {
-    const input = await requestPassphraseFromWebview(
-      panel,
-      keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key'
-    );
-    if (input === null) return;
-    passphrase = input;
-  }
-
-  const postKeyResult = async (pass: string | undefined) => {
-    try {
-      const keyInfo = loadAndValidatePrivateKey(keyBuf, spkiPem, pass);
-      const reply: ExtToWebviewMsg = { type: 'privateKeyImported', certIndex, key: keyInfo };
-      panel.webview.postMessage(reply);
-      return true;
-    } catch (err) {
-      return err as Error;
-    }
-  };
-
-  const result = await postKeyResult(passphrase);
-  if (result === true) {
-    // success — handled inside
-  } else {
-    const errMsg = result.message;
-    if (!passphrase && /passphrase|bad decrypt|encrypt|unsupported|interrupt/i.test(errMsg)) {
-      const input = await requestPassphraseFromWebview(
-        panel,
-        keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key'
-      );
-      if (input === null) return;
-      const retry = await postKeyResult(input);
-      if (retry !== true) {
-        panel.webview.postMessage({
-          type: 'privateKeyImportError', certIndex,
-          message: (retry as Error).message,
-        } as ExtToWebviewMsg);
-      }
-    } else {
-      panel.webview.postMessage({
-        type: 'privateKeyImportError', certIndex, message: errMsg,
-      } as ExtToWebviewMsg);
-    }
-  }
+  return importPrivateKey(createKeyImportHost(panel), msg, loadAndValidatePrivateKey);
 }
 
 async function handleCreateP12(
@@ -683,89 +589,28 @@ async function handleSavePrivateKey(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'savePrivateKey' }
 ): Promise<void> {
-  if (!pendingViewerCsrKeyPem) {
-    vscode.window.showWarningMessage('No private key in memory. The key is only available immediately after CSR generation.');
-    return;
-  }
-  const keyNameResult = await requestInputDialogFromWebview(
-    panel,
-    'Save Private Key',
-    [{ id: 'name', label: 'File name', type: 'text', value: 'private', placeholder: 'private', required: true, hint: 'A .key extension will be added automatically.' }],
-    { icon: '🗝️', confirmLabel: 'Save…' }
-  );
-  if (!keyNameResult) return;
-  const safeKeyName = keyNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'private';
-  const keyUri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(`${safeKeyName}.key`),
-    filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
-    saveLabel: 'Save Private Key',
-    title: 'Save Private Key',
-  });
-  if (!keyUri) return;
-  fs.writeFileSync(keyUri.fsPath, pendingViewerCsrKeyPem, 'utf8');
-  vscode.window.showInformationMessage(`Private key saved to ${keyUri.fsPath}`);
+  void msg;
+  return savePrivateKeyFromMemory(createViewerFileActionHost(panel), pendingViewerCsrKeyPem);
 }
 
 async function handleSaveCsrFile(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'saveCsrFile' }
 ): Promise<void> {
-  if (!pendingViewerCsrPem) {
-    vscode.window.showWarningMessage('No CSR in memory.');
-    return;
-  }
-  const csrNameResult = await requestInputDialogFromWebview(
-    panel,
-    'Save Certificate Signing Request',
-    [{ id: 'name', label: 'File name', type: 'text', value: 'request', placeholder: 'request', required: true, hint: 'A .csr extension will be added automatically.' }],
-    { icon: '📄', confirmLabel: 'Save…' }
-  );
-  if (!csrNameResult) return;
-  const safeCsrName = csrNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'request';
-  const csrUri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(`${safeCsrName}.csr`),
-    filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
-    saveLabel: 'Save CSR',
-    title: 'Save Certificate Signing Request',
-  });
-  if (!csrUri) return;
-  fs.writeFileSync(csrUri.fsPath, pendingViewerCsrPem, 'utf8');
-  vscode.window.showInformationMessage(`CSR saved to ${csrUri.fsPath}`);
+  void msg;
+  return saveCsrFromMemory(createViewerFileActionHost(panel), pendingViewerCsrPem);
 }
 
 async function handleSaveBothFiles(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'saveBothFiles' }
 ): Promise<void> {
-  if (!pendingViewerCsrPem || !pendingViewerCsrKeyPem) {
-    vscode.window.showWarningMessage('CSR or private key is no longer in memory.');
-    return;
-  }
-  const bothNameResult = await requestInputDialogFromWebview(
-    panel,
-    'Save CSR and Private Key',
-    [{ id: 'name', label: 'Base file name', type: 'text', value: msg.suggestedName, placeholder: 'certificate', required: true, hint: 'Extensions .csr and .key will be added automatically.' }],
-    { icon: '💾', description: 'Both files will be saved with the same base name.', confirmLabel: 'Save…' }
+  return saveCsrAndPrivateKey(
+    createViewerFileActionHost(panel),
+    pendingViewerCsrPem,
+    pendingViewerCsrKeyPem,
+    msg.suggestedName
   );
-  if (!bothNameResult) return;
-  const safe = bothNameResult.name.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 128) || 'certificate';
-  const csrUri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(`${safe}.csr`),
-    filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
-    saveLabel: 'Save CSR',
-    title: 'Save Certificate Signing Request',
-  });
-  if (!csrUri) return;
-  fs.writeFileSync(csrUri.fsPath, pendingViewerCsrPem, 'utf8');
-  const keyUri = await vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(`${safe}.key`),
-    filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
-    saveLabel: 'Save Private Key',
-    title: 'Save Private Key',
-  });
-  if (!keyUri) return;
-  fs.writeFileSync(keyUri.fsPath, pendingViewerCsrKeyPem, 'utf8');
-  vscode.window.showInformationMessage(`Saved: ${csrUri.fsPath} and ${keyUri.fsPath}`);
 }
 
 async function handleOpenConvertHub(

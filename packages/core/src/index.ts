@@ -6,6 +6,7 @@ export * from './types/qcEuPsd2';
 // Utils
 export * from './utils/certUtils';
 export * from './utils/derUtils';
+export * from './utils/caChainUtils';
 
 // Parsers
 export * from './parsers/certificateParser';

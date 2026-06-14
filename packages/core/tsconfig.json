@@ -13,8 +13,9 @@
     "resolveJsonModule": true,
     "moduleResolution": "node16",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "src/test", "dist"]
+  "exclude": ["node_modules", "dist"]
 }
