@@ -1,9 +1,9 @@
-import App from './App.svelte';
-import CreateCertPanel from './lib/CreateCertPanel.svelte';
-import ConvertHub from './lib/ConvertHub.svelte';
-import KeyViewer from './lib/KeyViewer.svelte';
-import KeyGenPanel from './lib/KeyGenPanel.svelte';
-import CrlView from './lib/CrlView.svelte';
+import App from './panels/App.svelte';
+import CreateCertPanel from './panels/CreateCertPanel.svelte';
+import ConvertHub from './panels/ConvertHub.svelte';
+import KeyViewer from './panels/KeyViewer.svelte';
+import KeyGenPanel from './panels/KeyGenPanel.svelte';
+import CrlView from './panels/CrlView.svelte';
 
 const appEl = document.getElementById('app')!;
 const view  = (appEl as HTMLElement).dataset.view;

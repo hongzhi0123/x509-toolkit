@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { CrlData, CrlViewerToExtMsg, ExtToCrlViewerMsg } from '../types';
-  import SectionCard from './SectionCard.svelte';
-  import FieldRow from './FieldRow.svelte';
-  import HexValue from './HexValue.svelte';
+  import SectionCard from '../lib/SectionCard.svelte';
+  import FieldRow from '../lib/FieldRow.svelte';
+  import HexValue from '../lib/HexValue.svelte';
 
   const vscode = acquireVsCodeApi();
 

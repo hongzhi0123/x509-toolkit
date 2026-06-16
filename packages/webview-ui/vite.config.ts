@@ -17,7 +17,7 @@ export default defineConfig({
     include: ['src/test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/lib/**/*.svelte'],
+      include: ['src/lib/**/*.svelte', 'src/panels/**/*.svelte'],
     },
   },
   build: {

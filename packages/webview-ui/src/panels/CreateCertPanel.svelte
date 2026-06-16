@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import InputDialog from './InputDialog.svelte';
+  import InputDialog from '../lib/InputDialog.svelte';
   import type { CertCreateParams, KeyAlgorithm, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '../types';
 
   const vscode = acquireVsCodeApi();

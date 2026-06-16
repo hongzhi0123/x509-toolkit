@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { ExtToKeyGenMsg, KeyGenToExtMsg, StandaloneKeyData } from '../types';
-  import SectionCard from './SectionCard.svelte';
-  import FieldRow from './FieldRow.svelte';
-  import HexValue from './HexValue.svelte';
-  import InputDialog from './InputDialog.svelte';
+  import SectionCard from '../lib/SectionCard.svelte';
+  import FieldRow from '../lib/FieldRow.svelte';
+  import HexValue from '../lib/HexValue.svelte';
+  import InputDialog from '../lib/InputDialog.svelte';
 
   const vscode = acquireVsCodeApi();
 

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo, TlsConnectionInfo } from './types';
-  import CertificateView from './lib/CertificateView.svelte';
-  import CsrView from './lib/CsrView.svelte';
-  import PassphraseDialog from './lib/PassphraseDialog.svelte';
-  import InputDialog from './lib/InputDialog.svelte';
-  import type { InputDialogFieldDef } from './types';
+  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo, TlsConnectionInfo } from '../types';
+  import CertificateView from '../lib/CertificateView.svelte';
+  import CsrView from '../lib/CsrView.svelte';
+  import PassphraseDialog from '../lib/PassphraseDialog.svelte';
+  import InputDialog from '../lib/InputDialog.svelte';
+  import type { InputDialogFieldDef } from '../types';
 
   const vscode = acquireVsCodeApi();
 
