@@ -1,23 +1,15 @@
-import App from './panels/App.svelte';
-import CreateCertPanel from './panels/CreateCertPanel.svelte';
-import ConvertHub from './panels/ConvertHub.svelte';
-import KeyViewer from './panels/KeyViewer.svelte';
-import KeyGenPanel from './panels/KeyGenPanel.svelte';
-import CrlView from './panels/CrlView.svelte';
-
 const appEl = document.getElementById('app')!;
 const view  = (appEl as HTMLElement).dataset.view;
 
-if (view === 'createCert') {
-  new CreateCertPanel({ target: appEl });
-} else if (view === 'convertHub') {
-  new ConvertHub({ target: appEl });
-} else if (view === 'keyViewer') {
-  new KeyViewer({ target: appEl });
-} else if (view === 'keyGen') {
-  new KeyGenPanel({ target: appEl });
-} else if (view === 'crlViewer') {
-  new CrlView({ target: appEl });
-} else {
-  new App({ target: appEl });
-}
+const loadPanel = (view?: string) => {
+  switch (view) {
+    case 'createCert': return import('./panels/CreateCertPanel.svelte');
+    case 'convertHub': return import('./panels/ConvertHub.svelte');
+    case 'keyViewer':  return import('./panels/KeyViewer.svelte');
+    case 'keyGen':     return import('./panels/KeyGenPanel.svelte');
+    case 'crlViewer':  return import('./panels/CrlView.svelte');
+    default:           return import('./panels/App.svelte');
+  }
+};
+
+loadPanel(view).then(mod => new mod.default({ target: appEl }));

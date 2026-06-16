@@ -6,6 +6,8 @@ import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './main
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '@x509-toolkit/core';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
+let createCertPanelReady = false;
+let pendingCreateCertMessages: ExtToCreateCertMsg[] = [];
 
 // ------------------------------------------------------------------
 // Generic input dialog bridge for the Create Cert panel
@@ -23,7 +25,7 @@ function requestInputDialogFromCreateCertPanel(
   return new Promise(resolve => {
     pendingCreateCertInputDialogRequests.set(requestId, resolve);
     const msg: ExtToCreateCertMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    panel.webview.postMessage(msg);
+    post(panel, msg);
   });
 }
 
@@ -40,6 +42,9 @@ export function openCreateCertPanel(
     var extensionUri: vscode.Uri = context.extensionUri;
 
     if (createCertPanelRef) {
+      createCertPanelReady = false;
+      pendingCreateCertMessages = [];
+      createCertPanelRef.webview.html = buildHtml(createCertPanelRef.webview, extensionUri);
       createCertPanelRef.reveal(vscode.ViewColumn.One, false);
       return;
     }
@@ -55,6 +60,8 @@ export function openCreateCertPanel(
       },
     );
 
+    createCertPanelReady = false;
+    pendingCreateCertMessages = [];
     panel.webview.html = buildHtml(panel.webview, extensionUri);
 
     pendingCaCertPem = undefined;
@@ -65,6 +72,8 @@ export function openCreateCertPanel(
         switch (msg.type) {
 
           case 'ready':
+            createCertPanelReady = true;
+            flushPending(panel);
             break;
 
           case 'inputDialogResponse': {
@@ -273,6 +282,8 @@ export function openCreateCertPanel(
 
     panel.onDidDispose(() => {
       createCertPanelRef = undefined;
+      createCertPanelReady = false;
+      pendingCreateCertMessages = [];
       pendingCaCertPem = undefined;
       pendingCaKeyPem = undefined;
       pendingCsrPem = undefined;
@@ -284,7 +295,18 @@ export function openCreateCertPanel(
 }
 
 function post(panel: vscode.WebviewPanel, msg: ExtToCreateCertMsg): void {
+  if (!createCertPanelReady) {
+    pendingCreateCertMessages.push(msg);
+    return;
+  }
   panel.webview.postMessage(msg);
+}
+
+function flushPending(panel: vscode.WebviewPanel): void {
+  if (!createCertPanelReady || pendingCreateCertMessages.length === 0) return;
+  const queued = pendingCreateCertMessages;
+  pendingCreateCertMessages = [];
+  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 // ─── HTML builder ─────────────────────────────────────────────────────────────
@@ -308,16 +330,17 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="csp-nonce" nonce="${nonce}">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}' ${webview.cspSource};">
   <link href="${styleUri}" rel="stylesheet">
   <title>Create Certificate</title>
 </head>
 <body>
   <div id="app" data-view="createCert"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

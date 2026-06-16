@@ -6,6 +6,8 @@ import { openKeyViewerWithKey } from './keyPanel';
 import type { ExtToKeyGenMsg, KeyGenToExtMsg, InputDialogFieldDef } from '@x509-toolkit/core';
 
 let keyGenPanelRef: vscode.WebviewPanel | undefined;
+let keyGenPanelReady = false;
+let pendingKeyGenMessages: ExtToKeyGenMsg[] = [];
 
 // Held for the lifetime of the open panel — cleared on dispose
 let heldPrivKey: crypto.KeyObject | undefined;
@@ -25,12 +27,23 @@ function requestInputDialog(
   return new Promise(resolve => {
     pendingInputDialogRequests.set(requestId, resolve);
     const msg: ExtToKeyGenMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    panel.webview.postMessage(msg);
+    post(panel, msg);
   });
 }
 
 function post(panel: vscode.WebviewPanel, msg: ExtToKeyGenMsg): void {
+  if (!keyGenPanelReady) {
+    pendingKeyGenMessages.push(msg);
+    return;
+  }
   panel.webview.postMessage(msg);
+}
+
+function flushPending(panel: vscode.WebviewPanel): void {
+  if (!keyGenPanelReady || pendingKeyGenMessages.length === 0) return;
+  const queued = pendingKeyGenMessages;
+  pendingKeyGenMessages = [];
+  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 function getNonce(): string {
@@ -51,16 +64,17 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="csp-nonce" nonce="${nonce}">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}' ${webview.cspSource};">
   <link href="${styleUri}" rel="stylesheet">
   <title>Key Generator</title>
 </head>
 <body>
   <div id="app" data-view="keyGen"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }
@@ -68,6 +82,9 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
   return () => {
     if (keyGenPanelRef) {
+      keyGenPanelReady = false;
+      pendingKeyGenMessages = [];
+      keyGenPanelRef.webview.html = buildHtml(keyGenPanelRef.webview, context.extensionUri);
       keyGenPanelRef.reveal(vscode.ViewColumn.One, false);
       return;
     }
@@ -83,6 +100,8 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
       },
     );
 
+    keyGenPanelReady = false;
+    pendingKeyGenMessages = [];
     panel.webview.html = buildHtml(panel.webview, context.extensionUri);
 
     heldPrivKey = undefined;
@@ -94,6 +113,8 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
         switch (msg.type) {
 
           case 'keyGenReady':
+            keyGenPanelReady = true;
+            flushPending(panel);
             break;
 
           case 'inputDialogResponse': {
@@ -212,6 +233,8 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
 
     panel.onDidDispose(() => {
       keyGenPanelRef = undefined;
+      keyGenPanelReady = false;
+      pendingKeyGenMessages = [];
       heldPrivKey = undefined;
       heldPrivKeyPem = undefined;
       heldPubKeyPem = undefined;

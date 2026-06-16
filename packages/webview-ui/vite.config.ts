@@ -24,9 +24,11 @@ export default defineConfig({
     outDir: '../extension/dist/webview',
     emptyOutDir: true,
     rollupOptions: {
+      input: 'src/main.ts',
       output: {
-        format: 'iife',
+        format: 'es',
         entryFileNames: 'main.js',
+        chunkFileNames: 'chunk-[hash].js',
         assetFileNames: (info) =>
           info.name?.endsWith('.css') ? 'styles.css' : '[name]-[hash][extname]',
       },

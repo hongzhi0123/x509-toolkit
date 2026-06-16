@@ -6,6 +6,8 @@ import { parseKeyFile, isEncryptedKey } from '@x509-toolkit/core';
 import type { ExtToKeyViewerMsg, KeyViewerToExtMsg, StandaloneKeyData } from '@x509-toolkit/core';
 
 let keyPanelRef: vscode.WebviewPanel | undefined;
+let keyPanelReady = false;
+let pendingKeyPanelMessages: ExtToKeyViewerMsg[] = [];
 
 // Held for the lifetime of the open panel — cleared on dispose
 let heldNodeKey: crypto.KeyObject | undefined;
@@ -22,12 +24,23 @@ function requestPassphraseFromKeyPanel(
   return new Promise(resolve => {
     pendingPassphraseRequests.set(requestId, resolve);
     const msg: ExtToKeyViewerMsg = { type: 'requestPassphrase', requestId, fileName, ...options };
-    panel.webview.postMessage(msg);
+    post(panel, msg);
   });
 }
 
 function post(panel: vscode.WebviewPanel, msg: ExtToKeyViewerMsg): void {
+  if (!keyPanelReady) {
+    pendingKeyPanelMessages.push(msg);
+    return;
+  }
   panel.webview.postMessage(msg);
+}
+
+function flushPending(panel: vscode.WebviewPanel): void {
+  if (!keyPanelReady || pendingKeyPanelMessages.length === 0) return;
+  const queued = pendingKeyPanelMessages;
+  pendingKeyPanelMessages = [];
+  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 function getNonce(): string {
@@ -48,22 +61,26 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="csp-nonce" nonce="${nonce}">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}' ${webview.cspSource};">
   <link href="${styleUri}" rel="stylesheet">
   <title>Key Viewer</title>
 </head>
 <body>
   <div id="app" data-view="keyViewer"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }
 
 function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
   if (keyPanelRef) {
+    keyPanelReady = false;
+    pendingKeyPanelMessages = [];
+    keyPanelRef.webview.html = buildHtml(keyPanelRef.webview, context.extensionUri);
     keyPanelRef.reveal(vscode.ViewColumn.Two, false);
     return keyPanelRef;
   }
@@ -79,6 +96,8 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
     },
   );
 
+  keyPanelReady = false;
+  pendingKeyPanelMessages = [];
   panel.webview.html = buildHtml(panel.webview, context.extensionUri);
 
   panel.webview.onDidReceiveMessage(
@@ -86,6 +105,8 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
       switch (msg.type) {
 
         case 'keyViewerReady':
+          keyPanelReady = true;
+          flushPending(panel);
           break;
 
         case 'copyToClipboard':
@@ -207,6 +228,8 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
 
   panel.onDidDispose(() => {
     keyPanelRef = undefined;
+    keyPanelReady = false;
+    pendingKeyPanelMessages = [];
     heldNodeKey = undefined;
     pendingPassphraseRequests.clear();
   }, null, context.subscriptions);

@@ -6,9 +6,14 @@ import { parseCertificate, parsePEMChain, parseP12, createP12Buffer } from '@x50
 import type { ConvertToExtMsg, ExtToConvertMsg } from '@x509-toolkit/core';
 
 let convertPanelRef: vscode.WebviewPanel | undefined;
+let convertPanelReady = false;
+let pendingConvertMessages: ExtToConvertMsg[] = [];
 
 export function openConvertPanel(context: vscode.ExtensionContext): void {
   if (convertPanelRef) {
+    convertPanelReady = false;
+    pendingConvertMessages = [];
+    convertPanelRef.webview.html = buildConvertHtml(convertPanelRef.webview, context.extensionUri);
     convertPanelRef.reveal(vscode.ViewColumn.Two, false);
     return;
   }
@@ -27,6 +32,8 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
     },
   );
 
+  convertPanelReady = false;
+  pendingConvertMessages = [];
   panel.webview.html = buildConvertHtml(panel.webview, context.extensionUri);
 
   panel.webview.onDidReceiveMessage(
@@ -34,6 +41,8 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
       switch (msg.type) {
 
         case 'convertReady':
+          convertPanelReady = true;
+          flushPending(panel);
           break;
 
         case 'convertPickFile': {
@@ -301,6 +310,8 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
 
   panel.onDidDispose(() => {
     convertPanelRef = undefined;
+    convertPanelReady = false;
+    pendingConvertMessages = [];
     pickedFiles.clear();
   }, null, context.subscriptions);
 
@@ -308,7 +319,18 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
 }
 
 function post(panel: vscode.WebviewPanel, msg: ExtToConvertMsg): void {
+  if (!convertPanelReady) {
+    pendingConvertMessages.push(msg);
+    return;
+  }
   panel.webview.postMessage(msg);
+}
+
+function flushPending(panel: vscode.WebviewPanel): void {
+  if (!convertPanelReady || pendingConvertMessages.length === 0) return;
+  const queued = pendingConvertMessages;
+  pendingConvertMessages = [];
+  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 // ─── HTML builder ─────────────────────────────────────────────────────────────
@@ -332,16 +354,17 @@ function buildConvertHtml(webview: vscode.Webview, extensionUri: vscode.Uri): st
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="csp-nonce" nonce="${nonce}">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}' ${webview.cspSource};">
   <link href="${styleUri}" rel="stylesheet">
   <title>Format Conversion Hub</title>
 </head>
 <body>
   <div id="app" data-view="convertHub"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

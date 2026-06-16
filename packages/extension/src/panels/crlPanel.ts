@@ -4,9 +4,22 @@ import { parseCrl, parsePemCrlChain } from '@x509-toolkit/core';
 import type { CrlData, CrlViewerToExtMsg, ExtToCrlViewerMsg } from '@x509-toolkit/core';
 
 let crlPanelRef: vscode.WebviewPanel | undefined;
+let crlPanelReady = false;
+let pendingCrlMessages: ExtToCrlViewerMsg[] = [];
 
 function post(panel: vscode.WebviewPanel, msg: ExtToCrlViewerMsg): void {
+  if (!crlPanelReady) {
+    pendingCrlMessages.push(msg);
+    return;
+  }
   panel.webview.postMessage(msg);
+}
+
+function flushPending(panel: vscode.WebviewPanel): void {
+  if (!crlPanelReady || pendingCrlMessages.length === 0) return;
+  const queued = pendingCrlMessages;
+  pendingCrlMessages = [];
+  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 function getNonce(): string {
@@ -27,22 +40,26 @@ function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="csp-nonce" nonce="${nonce}">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none';
                  style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}';">
+                 script-src 'nonce-${nonce}' ${webview.cspSource};">
   <link href="${styleUri}" rel="stylesheet">
   <title>CRL Viewer</title>
 </head>
 <body>
   <div id="app" data-view="crlViewer"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }
 
 function getOrCreateCrlPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
   if (crlPanelRef) {
+    crlPanelReady = false;
+    pendingCrlMessages = [];
+    crlPanelRef.webview.html = buildHtml(crlPanelRef.webview, context.extensionUri);
     crlPanelRef.reveal(vscode.ViewColumn.Two, false);
     return crlPanelRef;
   }
@@ -58,12 +75,16 @@ function getOrCreateCrlPanel(context: vscode.ExtensionContext): vscode.WebviewPa
     },
   );
 
+  crlPanelReady = false;
+  pendingCrlMessages = [];
   panel.webview.html = buildHtml(panel.webview, context.extensionUri);
 
   panel.webview.onDidReceiveMessage(
     (msg: CrlViewerToExtMsg) => {
       switch (msg.type) {
         case 'crlViewerReady':
+          crlPanelReady = true;
+          flushPending(panel);
           break;
         case 'copyToClipboard':
           vscode.env.clipboard.writeText(msg.value);
@@ -77,6 +98,8 @@ function getOrCreateCrlPanel(context: vscode.ExtensionContext): vscode.WebviewPa
 
   panel.onDidDispose(() => {
     crlPanelRef = undefined;
+    crlPanelReady = false;
+    pendingCrlMessages = [];
   });
 
   crlPanelRef = panel;
