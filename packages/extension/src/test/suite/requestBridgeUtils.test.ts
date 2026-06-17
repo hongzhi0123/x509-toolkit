@@ -7,12 +7,10 @@ import {
   resolvePassphraseRequest,
 } from '../../utils/requestBridgeUtils';
 
-type CapturedMessage = ExtToWebviewMsg;
-
 suite('requestBridgeUtils', () => {
   test('requestPassphrase posts a request and resolves the matching response', async () => {
-    const messages: CapturedMessage[] = [];
-    const promise = requestPassphrase({ postMessage: (message) => { messages.push(message); } }, 'server.p12', {
+    const messages: unknown[] = [];
+    const promise = requestPassphrase({ postMessage: (msg) => { messages.push(msg); } }, 'server.p12', {
       title: 'Unlock',
       requireConfirm: true,
     });
@@ -32,9 +30,9 @@ suite('requestBridgeUtils', () => {
   });
 
   test('requestInputDialog posts a request and resolves matching values', async () => {
-    const messages: CapturedMessage[] = [];
+    const messages: unknown[] = [];
     const promise = requestInputDialog(
-      { postMessage: (message) => { messages.push(message); } },
+      { postMessage: (msg) => { messages.push(msg); } },
       'Validity',
       [{ id: 'days', label: 'Days', type: 'number' }],
       { confirmLabel: 'Continue' },

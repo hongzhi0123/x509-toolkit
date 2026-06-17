@@ -1,18 +1,14 @@
-import type { ExtToWebviewMsg, InputDialogFieldDef } from '@x509-toolkit/core';
+import type { InputDialogFieldDef } from '@x509-toolkit/core';
 
-type WebviewMessageSink = {
-  postMessage(message: ExtToWebviewMsg): unknown;
-};
+export const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
+export const pendingInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
 
-const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
-const pendingInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
-
-function createRequestId(prefix: string): string {
+export function createRequestId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function requestInputDialog(
-  webview: WebviewMessageSink,
+  webview: { postMessage(message: unknown): unknown },
   title: string,
   fields: InputDialogFieldDef[],
   options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string }
@@ -20,21 +16,19 @@ export function requestInputDialog(
   const requestId = createRequestId('idlg');
   return new Promise(resolve => {
     pendingInputDialogRequests.set(requestId, resolve);
-    const msg: ExtToWebviewMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    webview.postMessage(msg);
+    webview.postMessage({ type: 'requestInputDialog', requestId, title, fields, ...options });
   });
 }
 
 export function requestPassphrase(
-  webview: WebviewMessageSink,
+  webview: { postMessage(message: unknown): unknown },
   fileName: string,
   options?: { title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean }
 ): Promise<string | null> {
   const requestId = createRequestId('pp');
   return new Promise(resolve => {
     pendingPassphraseRequests.set(requestId, resolve);
-    const msg: ExtToWebviewMsg = { type: 'requestPassphrase', requestId, fileName, ...options };
-    webview.postMessage(msg);
+    webview.postMessage({ type: 'requestPassphrase', requestId, fileName, ...options });
   });
 }
 

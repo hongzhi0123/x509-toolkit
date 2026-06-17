@@ -4,16 +4,11 @@ import * as crypto from 'crypto';
 import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr } from '@x509-toolkit/core';
 import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './mainViewerPanel';
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '@x509-toolkit/core';
+import { requestInputDialog, resolveInputDialogRequest } from '../utils/requestBridgeUtils';
+import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
-let createCertPanelReady = false;
-let pendingCreateCertMessages: ExtToCreateCertMsg[] = [];
-
-// ------------------------------------------------------------------
-// Generic input dialog bridge for the Create Cert panel
-// Maps requestId → resolve function of the awaiting Promise
-// ------------------------------------------------------------------
-const pendingCreateCertInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
+const createCertQueue = createMessageQueue<ExtToCreateCertMsg>();
 
 function requestInputDialogFromCreateCertPanel(
   panel: vscode.WebviewPanel,
@@ -21,12 +16,12 @@ function requestInputDialogFromCreateCertPanel(
   fields: InputDialogFieldDef[],
   options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string }
 ): Promise<Record<string, string> | null> {
-  const requestId = `idlg-cc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise(resolve => {
-    pendingCreateCertInputDialogRequests.set(requestId, resolve);
-    const msg: ExtToCreateCertMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    post(panel, msg);
-  });
+  return requestInputDialog(
+    { postMessage: (msg) => createCertQueue.post(panel, msg as ExtToCreateCertMsg) },
+    title,
+    fields,
+    options,
+  );
 }
 
 // Held for the lifetime of the open panel
@@ -42,9 +37,8 @@ export function openCreateCertPanel(
     var extensionUri: vscode.Uri = context.extensionUri;
 
     if (createCertPanelRef) {
-      createCertPanelReady = false;
-      pendingCreateCertMessages = [];
-      createCertPanelRef.webview.html = buildHtml(createCertPanelRef.webview, extensionUri);
+      createCertQueue.reset();
+      createCertPanelRef.webview.html = buildHtml(createCertPanelRef.webview, extensionUri, { title: 'Create Certificate', dataView: 'createCert' });
       createCertPanelRef.reveal(vscode.ViewColumn.One, false);
       return;
     }
@@ -60,9 +54,8 @@ export function openCreateCertPanel(
       },
     );
 
-    createCertPanelReady = false;
-    pendingCreateCertMessages = [];
-    panel.webview.html = buildHtml(panel.webview, extensionUri);
+    createCertQueue.reset();
+    panel.webview.html = buildHtml(panel.webview, extensionUri, { title: 'Create Certificate', dataView: 'createCert' });
 
     pendingCaCertPem = undefined;
     pendingCaKeyPem = undefined;
@@ -72,18 +65,13 @@ export function openCreateCertPanel(
         switch (msg.type) {
 
           case 'ready':
-            createCertPanelReady = true;
-            flushPending(panel);
+            createCertQueue.ready = true;
+            createCertQueue.flushPending(panel);
             break;
 
-          case 'inputDialogResponse': {
-            const resolve = pendingCreateCertInputDialogRequests.get(msg.requestId);
-            if (resolve) {
-              pendingCreateCertInputDialogRequests.delete(msg.requestId);
-              resolve(msg.values);
-            }
+          case 'inputDialogResponse':
+            resolveInputDialogRequest(msg.requestId, msg.values);
             break;
-          }
 
           case 'pickCaCert': {
             const uris = await vscode.window.showOpenDialog({
@@ -100,9 +88,9 @@ export function openCreateCertPanel(
               const buf = fs.readFileSync(uris[0].fsPath);
               const cert = await parseCertificate(buf);
               pendingCaCertPem = cert.raw;
-              post(panel, { type: 'caCertLoaded', subject: cert.subject.raw });
+              createCertQueue.post(panel, { type: 'caCertLoaded', subject: cert.subject.raw });
             } catch (e) {
-              post(panel, { type: 'error', message: `Failed to load CA cert: ${(e as Error).message}` });
+              createCertQueue.post(panel, { type: 'error', message: `Failed to load CA cert: ${(e as Error).message}` });
             }
             break;
           }
@@ -161,16 +149,16 @@ export function openCreateCertPanel(
 
               // Store the key as unencrypted PKCS#8 PEM so generateCertificate can load it
               pendingCaKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
-              post(panel, { type: 'caKeyLoaded', description: desc });
+              createCertQueue.post(panel, { type: 'caKeyLoaded', description: desc });
             } catch (e) {
-              post(panel, { type: 'error', message: `Failed to load CA key: ${(e as Error).message}` });
+              createCertQueue.post(panel, { type: 'error', message: `Failed to load CA key: ${(e as Error).message}` });
             }
             break;
           }
 
           case 'generate': {
             const params: CertCreateParams = msg.params;
-            post(panel, { type: 'generating' });
+            createCertQueue.post(panel, { type: 'generating' });
             let p12Buf: Buffer;
             try {
               p12Buf = await generateCertificate(
@@ -179,7 +167,7 @@ export function openCreateCertPanel(
                 params.signingMode === 'ca-signed' ? pendingCaKeyPem : undefined,
               );
             } catch (e) {
-              post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+              createCertQueue.post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
               break;
             }
 
@@ -193,7 +181,7 @@ export function openCreateCertPanel(
               title: 'Save Generated Certificate as P12',
             });
             if (!saveUri) {
-              post(panel, { type: 'done' });
+              createCertQueue.post(panel, { type: 'done' });
               break;
             }
             fs.writeFileSync(saveUri.fsPath, p12Buf);
@@ -218,7 +206,7 @@ export function openCreateCertPanel(
 
           case 'generateCsr': {
             const { params, keyPassword } = msg;
-            post(panel, { type: 'generating' });
+            createCertQueue.post(panel, { type: 'generating' });
             try {
               const { csrPem, privateKeyPem } = await generateCsr(params);
               // Optionally encrypt the private key with the user-supplied password
@@ -242,7 +230,7 @@ export function openCreateCertPanel(
               } catch { /* non-fatal: viewer key/CSR still work */ }
               panel.dispose();
             } catch (e) {
-              post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
+              createCertQueue.post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
             }
             break;
           }
@@ -282,8 +270,7 @@ export function openCreateCertPanel(
 
     panel.onDidDispose(() => {
       createCertPanelRef = undefined;
-      createCertPanelReady = false;
-      pendingCreateCertMessages = [];
+      createCertQueue.reset();
       pendingCaCertPem = undefined;
       pendingCaKeyPem = undefined;
       pendingCsrPem = undefined;
@@ -292,55 +279,4 @@ export function openCreateCertPanel(
 
     createCertPanelRef = panel;
   }
-}
-
-function post(panel: vscode.WebviewPanel, msg: ExtToCreateCertMsg): void {
-  if (!createCertPanelReady) {
-    pendingCreateCertMessages.push(msg);
-    return;
-  }
-  panel.webview.postMessage(msg);
-}
-
-function flushPending(panel: vscode.WebviewPanel): void {
-  if (!createCertPanelReady || pendingCreateCertMessages.length === 0) return;
-  const queued = pendingCreateCertMessages;
-  pendingCreateCertMessages = [];
-  queued.forEach(message => panel.webview.postMessage(message));
-}
-
-// ─── HTML builder ─────────────────────────────────────────────────────────────
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
-function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js'),
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'styles.css'),
-  );
-  const nonce = getNonce();
-
-  return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta property="csp-nonce" nonce="${nonce}">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none';
-                 style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}' ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>Create Certificate</title>
-</head>
-<body>
-  <div id="app" data-view="createCert"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

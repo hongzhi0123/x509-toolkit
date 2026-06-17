@@ -3,88 +3,37 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import { generateKeyPair } from '@x509-toolkit/core';
 import { openKeyViewerWithKey } from './keyPanel';
-import type { ExtToKeyGenMsg, KeyGenToExtMsg, InputDialogFieldDef } from '@x509-toolkit/core';
+import type { ExtToKeyGenMsg, InputDialogFieldDef, KeyGenToExtMsg } from '@x509-toolkit/core';
+import { requestInputDialog, resolveInputDialogRequest } from '../utils/requestBridgeUtils';
+import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let keyGenPanelRef: vscode.WebviewPanel | undefined;
-let keyGenPanelReady = false;
-let pendingKeyGenMessages: ExtToKeyGenMsg[] = [];
+const keyGenQueue = createMessageQueue<ExtToKeyGenMsg>();
 
 // Held for the lifetime of the open panel — cleared on dispose
 let heldPrivKey: crypto.KeyObject | undefined;
 let heldPrivKeyPem: string | undefined;
 let heldPubKeyPem: string | undefined;
 
-// Input dialog request bridge (used to prompt for passphrase on save)
-const pendingInputDialogRequests = new Map<string, (values: Record<string, string> | null) => void>();
-
-function requestInputDialog(
+function requestInputDialogFromKeyGen(
   panel: vscode.WebviewPanel,
   title: string,
   fields: InputDialogFieldDef[],
   options?: { icon?: string; description?: string; confirmLabel?: string; cancelLabel?: string },
 ): Promise<Record<string, string> | null> {
-  const requestId = `kgen-idlg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise(resolve => {
-    pendingInputDialogRequests.set(requestId, resolve);
-    const msg: ExtToKeyGenMsg = { type: 'requestInputDialog', requestId, title, fields, ...options };
-    post(panel, msg);
-  });
-}
-
-function post(panel: vscode.WebviewPanel, msg: ExtToKeyGenMsg): void {
-  if (!keyGenPanelReady) {
-    pendingKeyGenMessages.push(msg);
-    return;
-  }
-  panel.webview.postMessage(msg);
-}
-
-function flushPending(panel: vscode.WebviewPanel): void {
-  if (!keyGenPanelReady || pendingKeyGenMessages.length === 0) return;
-  const queued = pendingKeyGenMessages;
-  pendingKeyGenMessages = [];
-  queued.forEach(message => panel.webview.postMessage(message));
-}
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
-function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js'),
+  return requestInputDialog(
+    { postMessage: (msg) => keyGenQueue.post(panel, msg as ExtToKeyGenMsg) },
+    title,
+    fields,
+    options,
   );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'styles.css'),
-  );
-  const nonce = getNonce();
-  return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta property="csp-nonce" nonce="${nonce}">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none';
-                 style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}' ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>Key Generator</title>
-</head>
-<body>
-  <div id="app" data-view="keyGen"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }
 
 export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
   return () => {
     if (keyGenPanelRef) {
-      keyGenPanelReady = false;
-      pendingKeyGenMessages = [];
-      keyGenPanelRef.webview.html = buildHtml(keyGenPanelRef.webview, context.extensionUri);
+      keyGenQueue.reset();
+      keyGenPanelRef.webview.html = buildHtml(keyGenPanelRef.webview, context.extensionUri, { title: 'Key Generator', dataView: 'keyGen' });
       keyGenPanelRef.reveal(vscode.ViewColumn.One, false);
       return;
     }
@@ -100,9 +49,8 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
       },
     );
 
-    keyGenPanelReady = false;
-    pendingKeyGenMessages = [];
-    panel.webview.html = buildHtml(panel.webview, context.extensionUri);
+    keyGenQueue.reset();
+    panel.webview.html = buildHtml(panel.webview, context.extensionUri, { title: 'Key Generator', dataView: 'keyGen' });
 
     heldPrivKey = undefined;
     heldPrivKeyPem = undefined;
@@ -113,18 +61,13 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
         switch (msg.type) {
 
           case 'keyGenReady':
-            keyGenPanelReady = true;
-            flushPending(panel);
+            keyGenQueue.ready = true;
+            keyGenQueue.flushPending(panel);
             break;
 
-          case 'inputDialogResponse': {
-            const resolve = pendingInputDialogRequests.get(msg.requestId);
-            if (resolve) {
-              pendingInputDialogRequests.delete(msg.requestId);
-              resolve(msg.values);
-            }
+          case 'inputDialogResponse':
+            resolveInputDialogRequest(msg.requestId, msg.values);
             break;
-          }
 
           case 'copyToClipboard':
             vscode.env.clipboard.writeText(msg.value);
@@ -132,15 +75,15 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
             break;
 
           case 'keyGenGenerate': {
-            post(panel, { type: 'keyGenGenerating' });
+            keyGenQueue.post(panel, { type: 'keyGenGenerating' });
             try {
               const result = await generateKeyPair(msg.algorithm);
               heldPrivKey = result.nodeKey;
               heldPrivKeyPem = result.privateKeyPem;
               heldPubKeyPem = result.publicKeyPem;
-              post(panel, { type: 'keyGenDone', key: result.data });
+              keyGenQueue.post(panel, { type: 'keyGenDone', key: result.data });
             } catch (e) {
-              post(panel, { type: 'keyGenError', message: (e as Error).message });
+              keyGenQueue.post(panel, { type: 'keyGenError', message: (e as Error).message });
             }
             break;
           }
@@ -149,7 +92,7 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
             if (!heldPrivKeyPem || !heldPrivKey) break;
 
             // Ask whether to encrypt
-            const resp = await requestInputDialog(
+            const resp = await requestInputDialogFromKeyGen(
               panel,
               'Save Private Key',
               [
@@ -233,12 +176,10 @@ export function openKeyGenPanel(context: vscode.ExtensionContext): () => void {
 
     panel.onDidDispose(() => {
       keyGenPanelRef = undefined;
-      keyGenPanelReady = false;
-      pendingKeyGenMessages = [];
+      keyGenQueue.reset();
       heldPrivKey = undefined;
       heldPrivKeyPem = undefined;
       heldPubKeyPem = undefined;
-      pendingInputDialogRequests.clear();
     }, null, context.subscriptions);
 
     keyGenPanelRef = panel;

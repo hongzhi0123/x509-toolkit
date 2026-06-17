@@ -4,18 +4,18 @@ import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { X509Certificate } from '@peculiar/x509';
-import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr, formatIssuerChainFailure, validateIssuerChain } from '@x509-toolkit/core';
+import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr, formatIssuerChainFailure, validateIssuerChain, isEncryptedKey } from '@x509-toolkit/core';
 import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '@x509-toolkit/core';
 import { requestInputDialog, requestPassphrase, resolveInputDialogRequest, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
 import { routeViewerMessage } from '../utils/messageRouterUtils';
 import { exportCertificate, exportPrivateKey, savePrivateKeyFromMemory, saveCsrFromMemory, saveCsrAndPrivateKey, type ViewerFileActionHost } from '../utils/fileActionsUtils';
 import { importPrivateKey, type KeyImportHost } from '../utils/keyImportUtils';
 import { openConvertPanel } from './convertPanel';
+import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let extensionContext: vscode.ExtensionContext;
-let viewerReady = false;
-let pendingViewerMessages: ExtToWebviewMsg[] = [];
+const viewerQueue = createMessageQueue<ExtToWebviewMsg>();
 
 // CSR PEM and private key held when a CSR is generated via Create Cert panel.
 // The key is NEVER sent to the webview; only a description string is passed.
@@ -50,10 +50,10 @@ function createViewerFileActionHost(panel: vscode.WebviewPanel): ViewerFileActio
   };
 }
 
-function createQueuedWebviewSink(panel: vscode.WebviewPanel): { postMessage(message: ExtToWebviewMsg): unknown } {
+function createQueuedWebviewSink(panel: vscode.WebviewPanel): { postMessage(message: unknown): unknown } {
   return {
-    postMessage: (message: ExtToWebviewMsg) => {
-      postToViewer(panel, message);
+    postMessage: (message) => {
+      viewerQueue.post(panel, message as ExtToWebviewMsg);
     },
   };
 }
@@ -137,8 +137,8 @@ export function getOrCreatePanel(
   context: vscode.ExtensionContext
 ): vscode.WebviewPanel {
   if (currentPanel) {
-    viewerReady = false;
-    currentPanel.webview.html = buildHtml(currentPanel.webview, extensionUri);
+    viewerQueue.reset();
+    currentPanel.webview.html = buildHtml(currentPanel.webview, extensionUri, { title: 'X.509 Certificate Toolkit' });
     currentPanel.reveal(vscode.ViewColumn.Two, false);
     return currentPanel;
   }
@@ -154,9 +154,8 @@ export function getOrCreatePanel(
     }
   );
 
-  viewerReady = false;
-  pendingViewerMessages = [];
-  panel.webview.html = buildHtml(panel.webview, extensionUri);
+  viewerQueue.reset();
+  panel.webview.html = buildHtml(panel.webview, extensionUri, { title: 'X.509 Certificate Toolkit' });
   extensionContext = context;
 
   panel.webview.onDidReceiveMessage(
@@ -167,8 +166,7 @@ export function getOrCreatePanel(
 
   panel.onDidDispose(() => {
     currentPanel = undefined;
-    viewerReady = false;
-    pendingViewerMessages = [];
+    viewerQueue.reset();
     pendingViewerCsrPem = undefined;
     pendingViewerCsrKeyPem = undefined;
   }, null, context.subscriptions);
@@ -181,7 +179,7 @@ export function sendLoading(panel: vscode.WebviewPanel, status?: string): void {
   pendingViewerCsrPem = undefined;
   pendingViewerCsrKeyPem = undefined;
   const msg: ExtToWebviewMsg = status ? { type: 'loading', status } : { type: 'loading' };
-  postToViewer(panel, msg);
+  viewerQueue.post(panel, msg);
 }
 
 export function sendCertificates(
@@ -195,7 +193,7 @@ export function sendCertificates(
   const msg: ExtToWebviewMsg = tlsSource
     ? { type: 'certificate', chain, activeIndex, tlsSource }
     : { type: 'certificate', chain, activeIndex };
-  postToViewer(panel, msg);
+  viewerQueue.post(panel, msg);
 }
 
 export function sendCsr(panel: vscode.WebviewPanel, data: CsrData, keyPem?: string): void {
@@ -203,18 +201,17 @@ export function sendCsr(panel: vscode.WebviewPanel, data: CsrData, keyPem?: stri
   pendingViewerCsrPem = data.raw;
   let csrData = data;
   if (keyPem) {
-    const isEncrypted = keyPem.includes('ENCRYPTED');
     const { algorithm, keySize, namedCurve } = data.publicKey;
     const algDesc = keySize ? `${algorithm}-${keySize}` : namedCurve ? `${algorithm} ${namedCurve}` : algorithm;
-    csrData = { ...data, privateKeyDescription: isEncrypted ? `${algDesc} (encrypted)` : algDesc };
+    csrData = { ...data, privateKeyDescription: keyPem.includes('ENCRYPTED') ? `${algDesc} (encrypted)` : algDesc };
   }
   const msg: ExtToWebviewMsg = { type: 'csr', data: csrData };
-  postToViewer(panel, msg);
+  viewerQueue.post(panel, msg);
 }
 
 export function sendError(panel: vscode.WebviewPanel, message: string): void {
   const msg: ExtToWebviewMsg = { type: 'error', message };
-  postToViewer(panel, msg);
+  viewerQueue.post(panel, msg);
 }
 
 // ============================================================
@@ -226,8 +223,8 @@ export async function handleWebviewMessage(
   msg: WebviewToExtMsg
 ): Promise<void> {
   if (msg.type === 'ready') {
-    viewerReady = true;
-    flushPendingViewerMessages(panel);
+    viewerQueue.ready = true;
+    viewerQueue.flushPending(panel);
     return;
   }
 
@@ -247,21 +244,6 @@ export async function handleWebviewMessage(
     saveBothFiles: (message) => handleSaveBothFiles(panel, message),
     openConvertHub: (message) => handleOpenConvertHub(panel, message),
   });
-}
-
-function postToViewer(panel: vscode.WebviewPanel, msg: ExtToWebviewMsg): void {
-  if (!viewerReady) {
-    pendingViewerMessages.push(msg);
-    return;
-  }
-  panel.webview.postMessage(msg);
-}
-
-function flushPendingViewerMessages(panel: vscode.WebviewPanel): void {
-  if (!viewerReady || pendingViewerMessages.length === 0) return;
-  const queued = pendingViewerMessages;
-  pendingViewerMessages = [];
-  queued.forEach(message => panel.webview.postMessage(message));
 }
 
 // ============================================================
@@ -404,10 +386,7 @@ async function handleCreateP12(
       const keyFileName = keyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key';
 
       // Detect whether the key file is encrypted
-      const keyText = rawKeyBuf.toString('utf8').trim();
-      const isEncryptedPem =
-        keyText.includes('BEGIN ENCRYPTED PRIVATE KEY') ||
-        /Proc-Type:\s*4,ENCRYPTED/i.test(keyText);
+      const isEncryptedPem = isEncryptedKey(rawKeyBuf);
 
       if (isEncryptedPem) {
         const keyPassphrase = await requestPassphraseFromWebview(panel, keyFileName, {
@@ -417,7 +396,7 @@ async function handleCreateP12(
         });
         if (keyPassphrase === null) return;
         try {
-          const nodeKey = crypto.createPrivateKey({ key: keyText, passphrase: keyPassphrase });
+          const nodeKey = crypto.createPrivateKey({ key: rawKeyBuf, passphrase: keyPassphrase });
           keyBuf = Buffer.from(nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string, 'utf8');
         } catch (e) {
           vscode.window.showErrorMessage(`Failed to decrypt private key: ${(e as Error).message}`);
@@ -657,44 +636,4 @@ async function handleOpenConvertHub(
   openConvertPanel(extensionContext);
 }
 
-// ------------------------------------------------------------------
-// HTML builder
-// ------------------------------------------------------------------
-
-function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}
-
-function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js')
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'styles.css')
-  );
-  const nonce = getNonce();
-
-  return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta property="csp-nonce" nonce="${nonce}">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none';
-                 style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}' ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>X.509 Certificate Toolkit</title>
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
-}
+// HTML builder is now shared via webviewPanelUtils.ts

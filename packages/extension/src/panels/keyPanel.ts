@@ -4,83 +4,31 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { parseKeyFile, isEncryptedKey } from '@x509-toolkit/core';
 import type { ExtToKeyViewerMsg, KeyViewerToExtMsg, StandaloneKeyData } from '@x509-toolkit/core';
+import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
+import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let keyPanelRef: vscode.WebviewPanel | undefined;
-let keyPanelReady = false;
-let pendingKeyPanelMessages: ExtToKeyViewerMsg[] = [];
+const keyQueue = createMessageQueue<ExtToKeyViewerMsg>();
 
 // Held for the lifetime of the open panel — cleared on dispose
 let heldNodeKey: crypto.KeyObject | undefined;
-
-// Passphrase request bridge
-const pendingPassphraseRequests = new Map<string, (passphrase: string | null) => void>();
 
 function requestPassphraseFromKeyPanel(
   panel: vscode.WebviewPanel,
   fileName: string,
   options?: { title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean },
 ): Promise<string | null> {
-  const requestId = `kv-pp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return new Promise(resolve => {
-    pendingPassphraseRequests.set(requestId, resolve);
-    const msg: ExtToKeyViewerMsg = { type: 'requestPassphrase', requestId, fileName, ...options };
-    post(panel, msg);
-  });
-}
-
-function post(panel: vscode.WebviewPanel, msg: ExtToKeyViewerMsg): void {
-  if (!keyPanelReady) {
-    pendingKeyPanelMessages.push(msg);
-    return;
-  }
-  panel.webview.postMessage(msg);
-}
-
-function flushPending(panel: vscode.WebviewPanel): void {
-  if (!keyPanelReady || pendingKeyPanelMessages.length === 0) return;
-  const queued = pendingKeyPanelMessages;
-  pendingKeyPanelMessages = [];
-  queued.forEach(message => panel.webview.postMessage(message));
-}
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
-function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js'),
+  return requestPassphrase(
+    { postMessage: (msg) => keyQueue.post(panel, msg as ExtToKeyViewerMsg) },
+    fileName,
+    options,
   );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'styles.css'),
-  );
-  const nonce = getNonce();
-  return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta property="csp-nonce" nonce="${nonce}">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none';
-                 style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}' ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>Key Viewer</title>
-</head>
-<body>
-  <div id="app" data-view="keyViewer"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }
 
 function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
   if (keyPanelRef) {
-    keyPanelReady = false;
-    pendingKeyPanelMessages = [];
-    keyPanelRef.webview.html = buildHtml(keyPanelRef.webview, context.extensionUri);
+    keyQueue.reset();
+    keyPanelRef.webview.html = buildHtml(keyPanelRef.webview, context.extensionUri, { title: 'Key Viewer', dataView: 'keyViewer' });
     keyPanelRef.reveal(vscode.ViewColumn.Two, false);
     return keyPanelRef;
   }
@@ -96,17 +44,16 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
     },
   );
 
-  keyPanelReady = false;
-  pendingKeyPanelMessages = [];
-  panel.webview.html = buildHtml(panel.webview, context.extensionUri);
+  keyQueue.reset();
+  panel.webview.html = buildHtml(panel.webview, context.extensionUri, { title: 'Key Viewer', dataView: 'keyViewer' });
 
   panel.webview.onDidReceiveMessage(
     async (msg: KeyViewerToExtMsg) => {
       switch (msg.type) {
 
         case 'keyViewerReady':
-          keyPanelReady = true;
-          flushPending(panel);
+          keyQueue.ready = true;
+          keyQueue.flushPending(panel);
           break;
 
         case 'copyToClipboard':
@@ -114,14 +61,9 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
           vscode.window.showInformationMessage('Copied to clipboard.');
           break;
 
-        case 'passphraseResponse': {
-          const resolve = pendingPassphraseRequests.get(msg.requestId);
-          if (resolve) {
-            pendingPassphraseRequests.delete(msg.requestId);
-            resolve(msg.passphrase);
-          }
+        case 'passphraseResponse':
+          resolvePassphraseRequest(msg.requestId, msg.passphrase);
           break;
-        }
 
         case 'exportPrivateKey': {
           if (!heldNodeKey || heldNodeKey.type !== 'private') break;
@@ -228,10 +170,8 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
 
   panel.onDidDispose(() => {
     keyPanelRef = undefined;
-    keyPanelReady = false;
-    pendingKeyPanelMessages = [];
+    keyQueue.reset();
     heldNodeKey = undefined;
-    pendingPassphraseRequests.clear();
   }, null, context.subscriptions);
 
   keyPanelRef = panel;
@@ -268,13 +208,13 @@ export async function openKeyFile(
 
   const fileName = path.basename(filePath);
   const panel = getOrCreateKeyPanel(context);
-  post(panel, { type: 'keyLoading' });
+  keyQueue.post(panel, { type: 'keyLoading' });
 
   let buf: Buffer;
   try {
     buf = fs.readFileSync(filePath);
   } catch (e) {
-    post(panel, { type: 'keyError', message: `Failed to read file: ${(e as Error).message}` });
+    keyQueue.post(panel, { type: 'keyError', message: `Failed to read file: ${(e as Error).message}` });
     return;
   }
 
@@ -284,7 +224,7 @@ export async function openKeyFile(
     try {
       const { data, nodeKey } = parseKeyFile(buf, passphrase);
       heldNodeKey = nodeKey;
-      post(panel, { type: 'keyData', key: data });
+      keyQueue.post(panel, { type: 'keyData', key: data });
       return true;
     } catch {
       return false;
@@ -298,7 +238,7 @@ export async function openKeyFile(
       buttonLabel: 'Open',
     });
     if (passphrase === null) {
-      post(panel, { type: 'keyError', message: 'Operation cancelled.' });
+      keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
       return;
     }
     const ok = await tryParse(passphrase);
@@ -309,18 +249,18 @@ export async function openKeyFile(
         buttonLabel: 'Open',
       });
       if (pp2 === null) {
-        post(panel, { type: 'keyError', message: 'Operation cancelled.' });
+        keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
         return;
       }
       const ok2 = await tryParse(pp2);
       if (!ok2) {
-        post(panel, { type: 'keyError', message: 'Incorrect passphrase or corrupted key file.' });
+        keyQueue.post(panel, { type: 'keyError', message: 'Incorrect passphrase or corrupted key file.' });
       }
     }
   } else {
     const ok = await tryParse();
     if (!ok) {
-      post(panel, { type: 'keyError', message: 'Failed to parse key file — not a recognised private or public key format.' });
+      keyQueue.post(panel, { type: 'keyError', message: 'Failed to parse key file — not a recognised private or public key format.' });
     }
   }
 }
@@ -336,5 +276,5 @@ export function openKeyViewerWithKey(
 ): void {
   const panel = getOrCreateKeyPanel(context);
   heldNodeKey = nodeKey;
-  post(panel, { type: 'keyData', key: keyData });
+  keyQueue.post(panel, { type: 'keyData', key: keyData });
 }

@@ -4,16 +4,15 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { parseCertificate, parsePEMChain, parseP12, createP12Buffer } from '@x509-toolkit/core';
 import type { ConvertToExtMsg, ExtToConvertMsg } from '@x509-toolkit/core';
+import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let convertPanelRef: vscode.WebviewPanel | undefined;
-let convertPanelReady = false;
-let pendingConvertMessages: ExtToConvertMsg[] = [];
+const convertQueue = createMessageQueue<ExtToConvertMsg>();
 
 export function openConvertPanel(context: vscode.ExtensionContext): void {
   if (convertPanelRef) {
-    convertPanelReady = false;
-    pendingConvertMessages = [];
-    convertPanelRef.webview.html = buildConvertHtml(convertPanelRef.webview, context.extensionUri);
+    convertQueue.reset();
+    convertPanelRef.webview.html = buildHtml(convertPanelRef.webview, context.extensionUri, { title: 'Format Conversion Hub', dataView: 'convertHub' });
     convertPanelRef.reveal(vscode.ViewColumn.Two, false);
     return;
   }
@@ -32,17 +31,16 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
     },
   );
 
-  convertPanelReady = false;
-  pendingConvertMessages = [];
-  panel.webview.html = buildConvertHtml(panel.webview, context.extensionUri);
+  convertQueue.reset();
+  panel.webview.html = buildHtml(panel.webview, context.extensionUri, { title: 'Format Conversion Hub', dataView: 'convertHub' });
 
   panel.webview.onDidReceiveMessage(
     async (msg: ConvertToExtMsg) => {
       switch (msg.type) {
 
         case 'convertReady':
-          convertPanelReady = true;
-          flushPending(panel);
+          convertQueue.ready = true;
+          convertQueue.flushPending(panel);
           break;
 
         case 'convertPickFile': {
@@ -52,7 +50,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           });
           if (!uris?.[0]) break;
           pickedFiles.set(msg.slotId, uris[0].fsPath);
-          post(panel, {
+          convertQueue.post(panel, {
             type: 'convertFileSelected',
             slotId: msg.slotId,
             fileName: path.basename(uris[0].fsPath),
@@ -67,7 +65,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           });
           if (!uris?.length) break;
           uris.forEach((uri, i) => pickedFiles.set(`${msg.slotId}_${i}`, uri.fsPath));
-          post(panel, {
+          convertQueue.post(panel, {
             type: 'convertFileSelected',
             slotId: msg.slotId,
             fileName: `${uris.length} file(s) selected`,
@@ -79,7 +77,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
         case 'convertExecuteExtractP12': {
           const p12Path = pickedFiles.get('p12Input');
           if (!p12Path) {
-            post(panel, { type: 'convertError', message: 'No P12 file selected.' });
+            convertQueue.post(panel, { type: 'convertError', message: 'No P12 file selected.' });
             break;
           }
           let certs: Awaited<ReturnType<typeof parseP12>>;
@@ -87,7 +85,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
             const buf = fs.readFileSync(p12Path);
             certs = await parseP12(buf, msg.passphrase);
           } catch (e) {
-            post(panel, { type: 'convertError', message: `Failed to open P12: ${(e as Error).message}` });
+            convertQueue.post(panel, { type: 'convertError', message: `Failed to open P12: ${(e as Error).message}` });
             break;
           }
 
@@ -131,9 +129,9 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
               }
             }
 
-            post(panel, { type: 'convertResult', message: `Saved ${savedCount} file(s) successfully.` });
+            convertQueue.post(panel, { type: 'convertResult', message: `Saved ${savedCount} file(s) successfully.` });
           } catch (e) {
-            post(panel, { type: 'convertError', message: (e as Error).message });
+            convertQueue.post(panel, { type: 'convertError', message: (e as Error).message });
           }
           break;
         }
@@ -141,7 +139,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
         case 'convertExecuteBuildP12': {
           const certPath = pickedFiles.get('certInput');
           if (!certPath) {
-            post(panel, { type: 'convertError', message: 'No certificate file selected.' });
+            convertQueue.post(panel, { type: 'convertError', message: 'No certificate file selected.' });
             break;
           }
 
@@ -154,7 +152,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
               : [await parseCertificate(buf)];
             certPems = parsed.map(c => c.raw);
           } catch (e) {
-            post(panel, { type: 'convertError', message: `Failed to read certificate: ${(e as Error).message}` });
+            convertQueue.post(panel, { type: 'convertError', message: `Failed to read certificate: ${(e as Error).message}` });
             break;
           }
 
@@ -165,7 +163,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
               try {
                 keyBuf = fs.readFileSync(keyPath);
               } catch (e) {
-                post(panel, { type: 'convertError', message: `Failed to read key file: ${(e as Error).message}` });
+                convertQueue.post(panel, { type: 'convertError', message: `Failed to read key file: ${(e as Error).message}` });
                 break;
               }
             }
@@ -175,7 +173,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           try {
             p12Buf = createP12Buffer(certPems, msg.passphrase, keyBuf);
           } catch (e) {
-            post(panel, { type: 'convertError', message: `Failed to build P12: ${(e as Error).message}` });
+            convertQueue.post(panel, { type: 'convertError', message: `Failed to build P12: ${(e as Error).message}` });
             break;
           }
 
@@ -189,7 +187,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           if (!saveUri) break;
           fs.writeFileSync(saveUri.fsPath, p12Buf);
           const note = keyBuf ? ' (with private key)' : ' (certificates only)';
-          post(panel, { type: 'convertResult', message: `P12 saved${note}.` });
+          convertQueue.post(panel, { type: 'convertResult', message: `P12 saved${note}.` });
           break;
         }
 
@@ -197,7 +195,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           const slotId = msg.assetType === 'cert' ? 'certInput' : 'keyInput';
           const inputPath = pickedFiles.get(slotId);
           if (!inputPath) {
-            post(panel, { type: 'convertError', message: 'No input file selected.' });
+            convertQueue.post(panel, { type: 'convertError', message: 'No input file selected.' });
             break;
           }
           try {
@@ -227,7 +225,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
               });
               if (!saveUri) break;
               fs.writeFileSync(saveUri.fsPath, derBuf);
-              post(panel, { type: 'convertResult', message: 'DER file saved.' });
+              convertQueue.post(panel, { type: 'convertResult', message: 'DER file saved.' });
 
             } else {
               // DER → PEM
@@ -244,7 +242,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
                   } catch { /* try next format */ }
                 }
                 if (!nodeKey) {
-                  post(panel, { type: 'convertError', message: 'Could not parse DER key — unsupported format.' });
+                  convertQueue.post(panel, { type: 'convertError', message: 'Could not parse DER key — unsupported format.' });
                   break;
                 }
                 pemStr = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
@@ -257,10 +255,10 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
               });
               if (!saveUri) break;
               fs.writeFileSync(saveUri.fsPath, pemStr, 'utf8');
-              post(panel, { type: 'convertResult', message: 'PEM file saved.' });
+              convertQueue.post(panel, { type: 'convertResult', message: 'PEM file saved.' });
             }
           } catch (e) {
-            post(panel, { type: 'convertError', message: (e as Error).message });
+            convertQueue.post(panel, { type: 'convertError', message: (e as Error).message });
           }
           break;
         }
@@ -268,7 +266,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
         case 'convertExecuteBundleChain': {
           const { orderedSlotIds } = msg;
           if (!orderedSlotIds.length) {
-            post(panel, { type: 'convertError', message: 'No certificate files selected.' });
+            convertQueue.post(panel, { type: 'convertError', message: 'No certificate files selected.' });
             break;
           }
           const allPems: string[] = [];
@@ -283,7 +281,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
                 : [await parseCertificate(buf)];
               allPems.push(...certs.map(c => c.raw));
             } catch (e) {
-              post(panel, { type: 'convertError', message: `Failed to read ${path.basename(filePath)}: ${(e as Error).message}` });
+              convertQueue.post(panel, { type: 'convertError', message: `Failed to read ${path.basename(filePath)}: ${(e as Error).message}` });
               return;
             }
           }
@@ -296,7 +294,7 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
           });
           if (!saveUri) break;
           fs.writeFileSync(saveUri.fsPath, bundlePem, 'utf8');
-          post(panel, {
+          convertQueue.post(panel, {
             type: 'convertResult',
             message: `Bundle saved with ${allPems.length} certificate(s).`,
           });
@@ -310,61 +308,9 @@ export function openConvertPanel(context: vscode.ExtensionContext): void {
 
   panel.onDidDispose(() => {
     convertPanelRef = undefined;
-    convertPanelReady = false;
-    pendingConvertMessages = [];
+    convertQueue.reset();
     pickedFiles.clear();
   }, null, context.subscriptions);
 
   convertPanelRef = panel;
-}
-
-function post(panel: vscode.WebviewPanel, msg: ExtToConvertMsg): void {
-  if (!convertPanelReady) {
-    pendingConvertMessages.push(msg);
-    return;
-  }
-  panel.webview.postMessage(msg);
-}
-
-function flushPending(panel: vscode.WebviewPanel): void {
-  if (!convertPanelReady || pendingConvertMessages.length === 0) return;
-  const queued = pendingConvertMessages;
-  pendingConvertMessages = [];
-  queued.forEach(message => panel.webview.postMessage(message));
-}
-
-// ─── HTML builder ─────────────────────────────────────────────────────────────
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
-function buildConvertHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'main.js'),
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'styles.css'),
-  );
-  const nonce = getNonce();
-
-  return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta property="csp-nonce" nonce="${nonce}">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none';
-                 style-src ${webview.cspSource} 'unsafe-inline';
-                 script-src 'nonce-${nonce}' ${webview.cspSource};">
-  <link href="${styleUri}" rel="stylesheet">
-  <title>Format Conversion Hub</title>
-</head>
-<body>
-  <div id="app" data-view="convertHub"></div>
-  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
 }

@@ -1,4 +1,5 @@
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
+import { isEncryptedKey } from '@x509-toolkit/core';
 
 type OpenDialogOptions = {
   canSelectMany: boolean;
@@ -26,10 +27,6 @@ function getFileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? 'private key';
 }
 
-function isEncryptedPemKey(keyText: string): boolean {
-  return keyText.includes('BEGIN ENCRYPTED PRIVATE KEY') || /Proc-Type:\s*4,ENCRYPTED/i.test(keyText);
-}
-
 function shouldRetryWithPassphrase(errorMessage: string): boolean {
   return /passphrase|bad decrypt|encrypt|unsupported|interrupt/i.test(errorMessage);
 }
@@ -53,11 +50,10 @@ export async function importPrivateKey(
   }
 
   const keyBuffer = host.readFile(keyPath);
-  const keyText = keyBuffer.toString('utf8');
   const fileName = getFileName(keyPath);
 
   let passphrase: string | undefined;
-  if (isEncryptedPemKey(keyText)) {
+  if (isEncryptedKey(keyBuffer)) {
     const input = await host.requestPassphrase(fileName);
     if (input === null) {
       return;
