@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { getOrCreatePanel, sendLoading, sendError } from '../panels/mainViewerPanel';
 import { sendParsedFile } from '../utils/handleX509Input';
 
 export function openFromExplorer(
@@ -11,13 +10,10 @@ export function openFromExplorer(
     const ext = filePath.toLowerCase().split('.').pop() ?? '';
     const fileName = filePath.split(/[\\/]/).pop() ?? 'file';
 
-    const panel = getOrCreatePanel(context.extensionUri, context);
-    sendLoading(panel);
-
     try {
-      await sendParsedFile(fs.readFileSync(filePath), ext, fileName, panel);
+      await sendParsedFile(fs.readFileSync(filePath), ext, fileName, context);
     } catch (err: unknown) {
-      sendError(panel, (err as Error).message ?? String(err));
+      vscode.window.showErrorMessage((err as Error).message ?? String(err));
     }
   };
 }

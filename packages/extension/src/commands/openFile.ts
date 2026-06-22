@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { getOrCreatePanel, sendLoading, sendError } from '../panels/mainViewerPanel';
 import { sendParsedFile } from '../utils/handleX509Input';
 
 export function openFile(
@@ -11,7 +10,7 @@ export function openFile(
       canSelectMany: false,
       openLabel: 'Open X.509 File',
       filters: {
-        'X.509 Files': ['pem', 'crt', 'cer', 'der', 'p7b', 'p7c', 'p12', 'pfx', 'csr', 'req'],
+        'X.509 Files': ['pem', 'crt', 'cer', 'der', 'p7b', 'p7c', 'p12', 'pfx', 'csr', 'req', 'crl', 'key', 'pk8', 'p8'],
         'All Files': ['*'],
       },
     });
@@ -22,13 +21,10 @@ export function openFile(
     const ext = filePath.toLowerCase().split('.').pop() ?? '';
     const fileName = filePath.split(/[\\/]/).pop() ?? 'file';
 
-    const panel = getOrCreatePanel(context.extensionUri, context);
-    sendLoading(panel);
-
     try {
-      await sendParsedFile(fs.readFileSync(filePath), ext, fileName, panel);
+      await sendParsedFile(fs.readFileSync(filePath), ext, fileName, context);
     } catch (err: unknown) {
-      sendError(panel, (err as Error).message ?? String(err));
+      vscode.window.showErrorMessage((err as Error).message ?? String(err));
     }
   };
 }

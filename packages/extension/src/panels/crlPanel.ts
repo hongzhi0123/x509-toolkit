@@ -55,6 +55,47 @@ function getOrCreateCrlPanel(context: vscode.ExtensionContext): vscode.WebviewPa
   return panel;
 }
 
+async function openCrlFromBufferInternal(
+  context: vscode.ExtensionContext,
+  buf: Buffer,
+  displayName: string,
+  extHint?: string,
+): Promise<void> {
+  const panel = getOrCreateCrlPanel(context);
+  panel.title = `CRL — ${displayName}`;
+  crlQueue.post(panel, { type: 'crlLoading' });
+
+  try {
+    const ext = extHint ?? '';
+
+    let crls: CrlData[];
+    if (ext === 'pem' || buf.toString('ascii', 0, 64).includes('-----BEGIN')) {
+      crls = parsePemCrlChain(buf);
+    } else {
+      crls = [parseCrl(buf)];
+    }
+
+    if (crls.length === 0) {
+      crlQueue.post(panel, { type: 'crlError', message: 'No CRL entries found in file.' });
+      return;
+    }
+
+    // Send the first CRL (or all, for multi-CRL PEM — currently send first only)
+    crlQueue.post(panel, { type: 'crlData', crl: crls[0] });
+  } catch (err: unknown) {
+    crlQueue.post(panel, { type: 'crlError', message: (err as Error).message ?? String(err) });
+  }
+}
+
+export async function openCrlFromBuffer(
+  context: vscode.ExtensionContext,
+  buf: Buffer,
+  displayName: string,
+  extHint?: string,
+): Promise<void> {
+  await openCrlFromBufferInternal(context, buf, displayName, extHint);
+}
+
 /**
  * Open and parse a CRL file, then display it in the CRL Viewer panel.
  */
@@ -81,29 +122,14 @@ export function openCrlFile(
     }
 
     const fileName = filePath.split(/[\\/]/).pop() ?? 'file';
-    const panel = getOrCreateCrlPanel(context);
-    panel.title = `CRL — ${fileName}`;
-    crlQueue.post(panel, { type: 'crlLoading' });
 
     try {
       const buf = fs.readFileSync(filePath);
       const ext = filePath.toLowerCase().split('.').pop() ?? '';
-
-      let crls: CrlData[];
-      if (ext === 'pem' || buf.toString('ascii', 0, 32).includes('-----BEGIN')) {
-        crls = parsePemCrlChain(buf);
-      } else {
-        crls = [parseCrl(buf)];
-      }
-
-      if (crls.length === 0) {
-        crlQueue.post(panel, { type: 'crlError', message: 'No CRL entries found in file.' });
-        return;
-      }
-
-      // Send the first CRL (or all, for multi-CRL PEM — currently send first only)
-      crlQueue.post(panel, { type: 'crlData', crl: crls[0] });
+      await openCrlFromBufferInternal(context, buf, fileName, ext);
     } catch (err: unknown) {
+      const panel = getOrCreateCrlPanel(context);
+      panel.title = `CRL — ${fileName}`;
       crlQueue.post(panel, { type: 'crlError', message: (err as Error).message ?? String(err) });
     }
   };

@@ -181,6 +181,65 @@ function getOrCreateKeyPanel(context: vscode.ExtensionContext): vscode.WebviewPa
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
+ * Open the key viewer with a pre-loaded buffer.
+ * Handles encrypted key passphrase prompts in the webview.
+ */
+export async function openKeyFromBuffer(
+  context: vscode.ExtensionContext,
+  buf: Buffer,
+  displayName: string,
+): Promise<void> {
+  const panel = getOrCreateKeyPanel(context);
+  keyQueue.post(panel, { type: 'keyLoading' });
+
+  const encrypted = isEncryptedKey(buf);
+
+  const tryParse = async (passphrase?: string): Promise<boolean> => {
+    try {
+      const { data, nodeKey } = parseKeyFile(buf, passphrase);
+      heldNodeKey = nodeKey;
+      keyQueue.post(panel, { type: 'keyData', key: data });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (encrypted) {
+    const passphrase = await requestPassphraseFromKeyPanel(panel, displayName, {
+      title: 'Key File Passphrase',
+      description: `${displayName} is encrypted. Enter its passphrase.`,
+      buttonLabel: 'Open',
+    });
+    if (passphrase === null) {
+      keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
+      return;
+    }
+    const ok = await tryParse(passphrase);
+    if (!ok) {
+      const pp2 = await requestPassphraseFromKeyPanel(panel, displayName, {
+        title: 'Key File Passphrase',
+        description: `Incorrect passphrase for ${displayName}. Try again.`,
+        buttonLabel: 'Open',
+      });
+      if (pp2 === null) {
+        keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
+        return;
+      }
+      const ok2 = await tryParse(pp2);
+      if (!ok2) {
+        keyQueue.post(panel, { type: 'keyError', message: 'Incorrect passphrase or corrupted key file.' });
+      }
+    }
+  } else {
+    const ok = await tryParse();
+    if (!ok) {
+      keyQueue.post(panel, { type: 'keyError', message: 'Failed to parse key — not a recognised private or public key format.' });
+    }
+  }
+}
+
+/**
  * Open the key viewer, prompting for a file if `uri` is not supplied.
  * Handles encrypted key passphrase prompts in the webview.
  */
@@ -207,62 +266,17 @@ export async function openKeyFile(
   }
 
   const fileName = path.basename(filePath);
-  const panel = getOrCreateKeyPanel(context);
-  keyQueue.post(panel, { type: 'keyLoading' });
 
   let buf: Buffer;
   try {
     buf = fs.readFileSync(filePath);
   } catch (e) {
+    const panel = getOrCreateKeyPanel(context);
     keyQueue.post(panel, { type: 'keyError', message: `Failed to read file: ${(e as Error).message}` });
     return;
   }
 
-  const encrypted = isEncryptedKey(buf);
-
-  const tryParse = async (passphrase?: string): Promise<boolean> => {
-    try {
-      const { data, nodeKey } = parseKeyFile(buf, passphrase);
-      heldNodeKey = nodeKey;
-      keyQueue.post(panel, { type: 'keyData', key: data });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  if (encrypted) {
-    const passphrase = await requestPassphraseFromKeyPanel(panel, fileName, {
-      title: 'Key File Passphrase',
-      description: `${fileName} is encrypted. Enter its passphrase.`,
-      buttonLabel: 'Open',
-    });
-    if (passphrase === null) {
-      keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
-      return;
-    }
-    const ok = await tryParse(passphrase);
-    if (!ok) {
-      const pp2 = await requestPassphraseFromKeyPanel(panel, fileName, {
-        title: 'Key File Passphrase',
-        description: `Incorrect passphrase for ${fileName}. Try again.`,
-        buttonLabel: 'Open',
-      });
-      if (pp2 === null) {
-        keyQueue.post(panel, { type: 'keyError', message: 'Operation cancelled.' });
-        return;
-      }
-      const ok2 = await tryParse(pp2);
-      if (!ok2) {
-        keyQueue.post(panel, { type: 'keyError', message: 'Incorrect passphrase or corrupted key file.' });
-      }
-    }
-  } else {
-    const ok = await tryParse();
-    if (!ok) {
-      keyQueue.post(panel, { type: 'keyError', message: 'Failed to parse key file — not a recognised private or public key format.' });
-    }
-  }
+  await openKeyFromBuffer(context, buf, fileName);
 }
 
 /**

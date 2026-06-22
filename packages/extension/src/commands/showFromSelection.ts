@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { getOrCreatePanel, sendLoading } from '../panels/mainViewerPanel';
 import { sendParsedPemText } from '../utils/handleX509Input';
 
 export function showFromSelection(
@@ -24,10 +23,7 @@ export function showFromSelection(
       return;
     }
 
-    const panel = getOrCreatePanel(context.extensionUri, context);
-    sendLoading(panel);
-
     const text = selectedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-    await sendParsedPemText(text, panel);
+    await sendParsedPemText(text, context);
   };
 }
