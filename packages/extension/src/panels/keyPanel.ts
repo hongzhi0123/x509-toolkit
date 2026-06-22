@@ -239,45 +239,6 @@ export async function openKeyFromBuffer(
   }
 }
 
-/**
- * Open the key viewer, prompting for a file if `uri` is not supplied.
- * Handles encrypted key passphrase prompts in the webview.
- */
-export async function openKeyFile(
-  context: vscode.ExtensionContext,
-  uri?: vscode.Uri,
-): Promise<void> {
-  let filePath: string;
-
-  if (uri) {
-    filePath = uri.fsPath;
-  } else {
-    const uris = await vscode.window.showOpenDialog({
-      canSelectMany: false,
-      openLabel: 'Open Key File',
-      title: 'Open Key File (PEM or DER)',
-      filters: {
-        'Key Files': ['pem', 'key', 'der', 'pk8', 'p8', 'pub'],
-        'All Files': ['*'],
-      },
-    });
-    if (!uris?.[0]) return;
-    filePath = uris[0].fsPath;
-  }
-
-  const fileName = path.basename(filePath);
-
-  let buf: Buffer;
-  try {
-    buf = fs.readFileSync(filePath);
-  } catch (e) {
-    const panel = getOrCreateKeyPanel(context);
-    keyQueue.post(panel, { type: 'keyError', message: `Failed to read file: ${(e as Error).message}` });
-    return;
-  }
-
-  await openKeyFromBuffer(context, buf, fileName);
-}
 
 /**
  * Open the key viewer with a pre-parsed key (e.g. from the key generator panel).

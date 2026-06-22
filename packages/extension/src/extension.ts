@@ -5,9 +5,7 @@ import { openFile } from './commands/openFile';
 import { openFromExplorer } from './commands/openFromExplorer';
 import { inspectTlsServer } from './commands/inspectTlsServer';
 import { convertFormat } from './commands/convertFormat';
-import { openKeyFile } from './panels/keyPanel';
 import { openKeyGenPanel } from './panels/keyGenPanel';
-import { openCrlFile } from './panels/crlPanel';
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -17,9 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('x509toolkit.openFromExplorer', openFromExplorer(context)),
     vscode.commands.registerCommand('x509toolkit.inspectTlsServer', inspectTlsServer(context)),
     vscode.commands.registerCommand('x509toolkit.convertFormat', convertFormat(context)),
-    vscode.commands.registerCommand('x509toolkit.openKeyFile', (uri?: vscode.Uri) => openKeyFile(context, uri)),
-    vscode.commands.registerCommand('x509toolkit.generateKey', openKeyGenPanel(context)),
-    vscode.commands.registerCommand('x509toolkit.openCrlFile', (uri?: vscode.Uri) => openCrlFile(context, uri)())
+    vscode.commands.registerCommand('x509toolkit.generateKey', openKeyGenPanel(context))
   );
 }
 
