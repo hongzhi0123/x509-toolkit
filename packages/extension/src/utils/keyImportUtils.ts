@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { isEncryptedKey } from '@x509-toolkit/core';
 
@@ -29,6 +30,28 @@ function getFileName(filePath: string): string {
 
 function shouldRetryWithPassphrase(errorMessage: string): boolean {
   return /passphrase|bad decrypt|encrypt|unsupported|interrupt/i.test(errorMessage);
+}
+
+/**
+ * Attempt to load a private key, prompting for a passphrase if it is encrypted.
+ * Returns the parsed KeyObject, or `null` if the user cancelled the passphrase prompt.
+ * Re-throws the original error for non-passphrase-related failures.
+ */
+export async function tryLoadPrivateKey(
+  keyInput: string | Buffer,
+  requestPassphrase: () => Promise<string | null>,
+): Promise<crypto.KeyObject | null> {
+  try {
+    return crypto.createPrivateKey(keyInput);
+  } catch (firstErr) {
+    const msg = (firstErr as Error).message ?? '';
+    if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(msg)) {
+      const passphrase = await requestPassphrase();
+      if (passphrase === null) return null;
+      return crypto.createPrivateKey({ key: keyInput, passphrase });
+    }
+    throw firstErr;
+  }
 }
 
 export async function importPrivateKey(

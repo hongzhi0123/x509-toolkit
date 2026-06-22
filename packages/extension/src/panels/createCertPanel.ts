@@ -5,6 +5,7 @@ import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr 
 import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './mainViewerPanel';
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '@x509-toolkit/core';
 import { requestInputDialog, resolveInputDialogRequest } from '../utils/requestBridgeUtils';
+import { tryLoadPrivateKey } from '../utils/keyImportUtils';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
 let createCertPanelRef: vscode.WebviewPanel | undefined;
@@ -111,34 +112,23 @@ export function openCreateCertPanel(
               const isPem = raw.toString('utf8').trimStart().startsWith('-----');
               const keyInput = isPem ? raw.toString('utf8') : raw;
 
-              let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
-              try {
-                // First attempt: no passphrase
-                nodeKey = crypto.createPrivateKey(keyInput);
-              } catch (firstErr) {
-                const msg = (firstErr as Error).message ?? '';
-                // If the error looks like an encryption/passphrase error, prompt the user
-                if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(msg)) {
-                  const result = await requestInputDialogFromCreateCertPanel(
-                    panel,
-                    'CA Private Key Passphrase',
-                    [{
-                      id: 'passphrase',
-                      label: 'Passphrase',
-                      type: 'password',
-                      placeholder: 'Enter passphrase',
-                      required: true,
-                      hint: 'This private key is encrypted. Enter its passphrase.',
-                    }],
-                    { icon: '🔑', confirmLabel: 'Unlock' },
-                  );
-                  if (result === null) break;  // user cancelled
-                  const passphrase = result['passphrase'];
-                  nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
-                } else {
-                  throw firstErr;
-                }
-              }
+              const nodeKey = await tryLoadPrivateKey(keyInput, async () => {
+                const result = await requestInputDialogFromCreateCertPanel(
+                  panel,
+                  'CA Private Key Passphrase',
+                  [{
+                    id: 'passphrase',
+                    label: 'Passphrase',
+                    type: 'password',
+                    placeholder: 'Enter passphrase',
+                    required: true,
+                    hint: 'This private key is encrypted. Enter its passphrase.',
+                  }],
+                  { icon: '🔑', confirmLabel: 'Unlock' },
+                );
+                return result?.['passphrase'] ?? null;
+              });
+              if (!nodeKey) break;  // user cancelled
 
               const details = nodeKey.asymmetricKeyDetails as Record<string, unknown> ?? {};
               const keyType = nodeKey.asymmetricKeyType ?? 'unknown';

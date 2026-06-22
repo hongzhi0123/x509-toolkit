@@ -2,6 +2,11 @@
 import type { DistinguishedName } from '../types/types';
 import { DN_ATTR_NAMES } from '../types/oidMaps';
 
+export function hexColons(hex: string): string {
+  const padded = hex.length % 2 === 0 ? hex : '0' + hex;
+  return (padded.match(/.{1,2}/g) ?? [padded]).join(':').toUpperCase();
+}
+
 export function bufToHex(buf: ArrayBuffer | Uint8Array): string {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   return Array.from(bytes)

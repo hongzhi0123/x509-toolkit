@@ -1,24 +1,12 @@
 import { X509Crl, X509CrlReason, cryptoProvider } from '@peculiar/x509';
 import { Crypto as PeculiarCrypto } from '@peculiar/webcrypto';
-import type { CrlData, CrlRevokedEntry, DistinguishedName } from '../types/types';
+import { id_ce_cRLNumber, id_ce_authorityKeyIdentifier, id_ce_issuingDistributionPoint } from '@peculiar/asn1-x509';
+import type { CrlData, CrlRevokedEntry } from '../types/types';
 import { bufToHex, parseDNString } from '../utils/certUtils';
 import { SIG_ALG_NAMES } from '../types/oidMaps';
 
 // Ensure the WebCrypto provider is initialised (idempotent).
 cryptoProvider.set(new PeculiarCrypto());
-
-// OID constants for CRL extensions
-const OID_CRL_NUMBER = '2.5.29.20';
-const OID_AUTHORITY_KEY_IDENTIFIER = '2.5.29.35';
-const OID_ISSUING_DISTRIBUTION_POINT = '2.5.29.28';
-
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
-
-function parseCrlIssuerDn(nameStr: string): DistinguishedName {
-  return parseDNString(nameStr);
-}
 
 /**
  * Try to detect PEM vs DER and return a raw DER Buffer.
@@ -113,7 +101,7 @@ export function parseCrl(input: Buffer): CrlData {
   }
 
   // ── Issuer ──────────────────────────────────────────────────────
-  const issuer = parseCrlIssuerDn(crl.issuerName.toString());
+  const issuer = parseDNString(crl.issuerName.toString());
 
   // ── Dates ───────────────────────────────────────────────────────
   const thisUpdate = crl.thisUpdate.toISOString();
@@ -150,12 +138,12 @@ export function parseCrl(input: Buffer): CrlData {
 
   for (const ext of crl.extensions ?? []) {
     try {
-      if (ext.type === OID_CRL_NUMBER) {
+      if (ext.type === id_ce_cRLNumber) {
         crlNumber = parseCrlNumberFromRaw(ext.rawData);
-      } else if (ext.type === OID_AUTHORITY_KEY_IDENTIFIER) {
+      } else if (ext.type === id_ce_authorityKeyIdentifier) {
         const aki = parseAkiFromRaw(ext.rawData);
         if (aki) authorityKeyIdentifier = aki;
-      } else if (ext.type === OID_ISSUING_DISTRIBUTION_POINT) {
+      } else if (ext.type === id_ce_issuingDistributionPoint) {
         // Best-effort: just note presence
         issuingDistributionPoints.push('(present — details omitted)');
       }

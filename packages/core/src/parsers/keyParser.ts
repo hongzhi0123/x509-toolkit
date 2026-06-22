@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as forge from 'node-forge';
-import { bufToHex } from '../utils/certUtils';
+import { bufToHex, hexColons } from '../utils/certUtils';
 import type { StandaloneKeyData, KeyAlgorithm } from '../types/types';
 
 const ALG_DISPLAY: Record<string, string> = {
@@ -24,11 +24,6 @@ function detectPemFormat(text: string): InputFormat {
   if (/^-----BEGIN PUBLIC KEY-----/m.test(text)) return 'spki-pem';
   if (/^-----BEGIN RSA PUBLIC KEY-----/m.test(text)) return 'pkcs1-pub-pem';
   return 'unknown';
-}
-
-function hexColons(hex: string): string {
-  const padded = hex.length % 2 === 0 ? hex : '0' + hex;
-  return (padded.match(/.{1,2}/g) ?? [padded]).join(':').toUpperCase();
 }
 
 /**

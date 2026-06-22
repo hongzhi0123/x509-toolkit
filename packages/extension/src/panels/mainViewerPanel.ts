@@ -9,7 +9,7 @@ import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputD
 import { requestInputDialog, requestPassphrase, resolveInputDialogRequest, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
 import { routeViewerMessage } from '../utils/messageRouterUtils';
 import { exportCertificate, exportPrivateKey, savePrivateKeyFromMemory, saveCsrFromMemory, saveCsrAndPrivateKey, type ViewerFileActionHost } from '../utils/fileActionsUtils';
-import { importPrivateKey, type KeyImportHost } from '../utils/keyImportUtils';
+import { importPrivateKey, tryLoadPrivateKey, type KeyImportHost } from '../utils/keyImportUtils';
 import { openConvertPanel } from './convertPanel';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 
@@ -481,32 +481,23 @@ async function handleSignCsr(
     const raw = fs.readFileSync(caKeyUris[0].fsPath);
     const isPem = raw.toString('utf8').trimStart().startsWith('-----');
     const keyInput = isPem ? raw.toString('utf8') : raw;
-    let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
-    try {
-      nodeKey = crypto.createPrivateKey(keyInput);
-    } catch (firstErr) {
-      const errMsg = (firstErr as Error).message ?? '';
-      if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(errMsg)) {
-        const result = await requestInputDialogFromWebview(
-          panel,
-          'CA Private Key Passphrase',
-          [{
-            id: 'passphrase',
-            label: 'Passphrase',
-            type: 'password',
-            placeholder: 'Enter passphrase',
-            required: true,
-            hint: 'This private key is encrypted. Enter its passphrase.',
-          }],
-          { icon: '🔑', confirmLabel: 'Unlock' },
-        );
-        if (result === null) return;
-        const passphrase = result['passphrase'];
-        nodeKey = crypto.createPrivateKey({ key: keyInput as string | Buffer, passphrase });
-      } else {
-        throw firstErr;
-      }
-    }
+    const nodeKey = await tryLoadPrivateKey(keyInput, async () => {
+      const result = await requestInputDialogFromWebview(
+        panel,
+        'CA Private Key Passphrase',
+        [{
+          id: 'passphrase',
+          label: 'Passphrase',
+          type: 'password',
+          placeholder: 'Enter passphrase',
+          required: true,
+          hint: 'This private key is encrypted. Enter its passphrase.',
+        }],
+        { icon: '🔑', confirmLabel: 'Unlock' },
+      );
+      return result?.['passphrase'] ?? null;
+    });
+    if (!nodeKey) return;
     caKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
   } catch (e) {
     vscode.window.showErrorMessage(`Failed to load CA key: ${(e as Error).message}`);
@@ -525,24 +516,15 @@ async function handleSignCsr(
   try {
     const raw = fs.readFileSync(reqKeyUris[0].fsPath);
     const keyText = raw.toString('utf8').trim();
-    let nodeKey: ReturnType<typeof crypto.createPrivateKey>;
-    try {
-      nodeKey = crypto.createPrivateKey(keyText);
-    } catch (firstErr) {
-      const errMsg = (firstErr as Error).message ?? '';
-      if (/passphrase|encrypted|bad decrypt|EVP_|PKCS/i.test(errMsg)) {
-        const fileName = reqKeyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key';
-        const passphrase = await requestPassphraseFromWebview(panel, fileName, {
-          title: 'Private Key Passphrase',
-          description: `${fileName} is password-protected. Enter its passphrase.`,
-          buttonLabel: 'Unlock',
-        });
-        if (passphrase === null) return;
-        nodeKey = crypto.createPrivateKey({ key: keyText, passphrase });
-      } else {
-        throw firstErr;
-      }
-    }
+    const fileName = reqKeyUris[0].fsPath.split(/[\\/]/).pop() ?? 'private key';
+    const nodeKey = await tryLoadPrivateKey(keyText, () =>
+      requestPassphraseFromWebview(panel, fileName, {
+        title: 'Private Key Passphrase',
+        description: `${fileName} is password-protected. Enter its passphrase.`,
+        buttonLabel: 'Unlock',
+      })
+    );
+    if (!nodeKey) return;
     requesterKeyPem = nodeKey.export({ type: 'pkcs8', format: 'pem' }) as string;
   } catch (e) {
     vscode.window.showErrorMessage(`Failed to load private key: ${(e as Error).message}`);
