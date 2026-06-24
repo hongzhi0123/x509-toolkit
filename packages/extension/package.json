@@ -125,7 +125,9 @@
     "watch": "webpack --mode development --watch",
     "package": "vsce package --no-dependencies",
     "pretest": "tsc -p tsconfig.test.json",
-    "test": "node ./out/test/test/runTest.js"
+    "test": "node ./out/test/test/runTest.js",
+    "pretest:e2e": "tsc -p tsconfig.test.json",
+    "test:e2e": "node ./out/test/test/runE2E.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

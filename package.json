@@ -14,6 +14,7 @@
     "test": "npm test -w packages/core && npm test -w packages/extension",
     "test:core": "npm test -w packages/core",
     "test:ext": "npm test -w packages/extension",
+    "test:e2e": "npm run test:e2e -w packages/extension",
     "package": "npm run build && npm run package -w packages/extension"
   }
 }

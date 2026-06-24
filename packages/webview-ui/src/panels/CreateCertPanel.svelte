@@ -201,10 +201,10 @@
   ];
 </script>
 
-<div class="panel">
+<div class="panel" data-testid="create-cert-root">
   {#if panelState === 'csrReady'}
     <!-- ── CSR ready results screen ─────────────────────────────────────── -->
-    <div class="csr-ready">
+    <div class="csr-ready" data-testid="create-cert-csr-ready">
       <div class="csr-ready-header">
         <span class="csr-ready-icon">✅</span>
         <div>
@@ -218,8 +218,8 @@
           <h2 class="section-title" style="margin:0;">Certificate Signing Request (CSR)</h2>
           <button class="btn-secondary btn-sm" on:click={copyCsr}>Copy</button>
         </div>
-        <textarea class="csr-pem" readonly rows="12" value={csrPemReady} />
-        <button class="btn-secondary" style="margin-top:10px;" on:click={saveCsr}>
+        <textarea class="csr-pem" data-testid="create-cert-csr-pem" readonly rows="12" value={csrPemReady} />
+        <button class="btn-secondary" data-testid="create-cert-save-csr" style="margin-top:10px;" on:click={saveCsr}>
           ⬇ Save CSR (.csr)
         </button>
       </section>
@@ -229,13 +229,13 @@
         <p class="csr-note">
           <strong>Keep this file safe.</strong> You will need it later when your CA returns the signed certificate, to bundle both together into a P12 file.
         </p>
-        <button class="btn-secondary" on:click={saveKey}>
+        <button class="btn-secondary" data-testid="create-cert-save-key" on:click={saveKey}>
           ⬇ Save Private Key (.key)
         </button>
       </section>
 
       <div class="actions">
-        <button class="btn-secondary" on:click={startOver}>Start Over</button>
+        <button class="btn-secondary" data-testid="create-cert-start-over" on:click={startOver}>Start Over</button>
       </div>
     </div>
 
@@ -248,7 +248,7 @@
     <div class="grid2">
       <label class="field required">
         <span>Common Name (CN)</span>
-        <input bind:value={cn} type="text" placeholder="e.g. my-service.example.com" autocomplete="off" />
+        <input data-testid="create-cert-cn" bind:value={cn} type="text" placeholder="e.g. my-service.example.com" autocomplete="off" />
       </label>
       <label class="field">
         <span>Email</span>
@@ -304,7 +304,7 @@
     <div class="grid3">
       <label class="field">
         <span>Key Algorithm</span>
-        <select bind:value={keyAlgorithm}>
+        <select data-testid="create-cert-key-algorithm" bind:value={keyAlgorithm}>
           <option value="RSA-2048">RSA-2048  (recommended)</option>
           <option value="RSA-4096">RSA-4096  (stronger)</option>
           <option value="EC-P256">EC P-256  (ECDSA, fast)</option>
@@ -313,7 +313,7 @@
         </select>
       </label>
       <label class="field checkbox-field" style="align-self:end;">
-        <input type="checkbox" bind:checked={isCA} />
+        <input data-testid="create-cert-is-ca" type="checkbox" bind:checked={isCA} />
         <span>Certificate Authority (CA)</span>
       </label>
     </div>
@@ -374,15 +374,15 @@
     <h2 class="section-title">Signing</h2>
     <div class="radio-group">
       <label class="radio-field">
-        <input type="radio" bind:group={signingMode} value="self-signed" />
+        <input data-testid="create-cert-signing-self" type="radio" bind:group={signingMode} value="self-signed" />
         Self-signed
       </label>
       <label class="radio-field">
-        <input type="radio" bind:group={signingMode} value="ca-signed" />
+        <input data-testid="create-cert-signing-ca" type="radio" bind:group={signingMode} value="ca-signed" />
         Signed by a CA
       </label>
       <label class="radio-field">
-        <input type="radio" bind:group={signingMode} value="csr" />
+        <input data-testid="create-cert-signing-csr" type="radio" bind:group={signingMode} value="csr" />
         CSR only — sign later
       </label>
     </div>
@@ -394,7 +394,7 @@
     {#if signingMode === 'ca-signed'}
       <div class="ca-section">
         <div class="ca-row">
-          <button class="btn-secondary" on:click={pickCaCert}>Browse CA Certificate…</button>
+          <button class="btn-secondary" data-testid="create-cert-pick-ca-cert" on:click={pickCaCert}>Browse CA Certificate…</button>
           {#if caCertSubject}
             <span class="ca-info">✓ {caCertSubject}</span>
           {:else}
@@ -402,7 +402,7 @@
           {/if}
         </div>
         <div class="ca-row">
-          <button class="btn-secondary" on:click={pickCaKey}>Browse CA Private Key…</button>
+          <button class="btn-secondary" data-testid="create-cert-pick-ca-key" on:click={pickCaKey}>Browse CA Private Key…</button>
           {#if caKeyDesc}
             <span class="ca-info">✓ {caKeyDesc} key loaded</span>
           {:else}
@@ -420,7 +420,7 @@
       <div class="grid2">
         <label class="field">
           <span>Password <span class="hint">(leave empty for none)</span></span>
-          <input bind:value={keyPassword} type="password" autocomplete="new-password" />
+          <input data-testid="create-cert-key-password" bind:value={keyPassword} type="password" autocomplete="new-password" />
         </label>
       </div>
     </section>
@@ -430,11 +430,11 @@
       <div class="grid2">
         <label class="field">
           <span>Password <span class="hint">(leave empty for no password)</span></span>
-          <input bind:value={password} type="password" autocomplete="new-password" />
+          <input data-testid="create-cert-p12-password" bind:value={password} type="password" autocomplete="new-password" />
         </label>
         <label class="field" class:error={passwordMismatch && passwordConfirm !== ''}>
           <span>Confirm Password</span>
-          <input bind:value={passwordConfirm} type="password" autocomplete="new-password" />
+          <input data-testid="create-cert-p12-password-confirm" bind:value={passwordConfirm} type="password" autocomplete="new-password" />
           {#if passwordMismatch && passwordConfirm !== ''}
             <span class="field-error">Passwords do not match</span>
           {/if}
@@ -445,19 +445,19 @@
 
   <!-- ── Status / Error ───────────────────────────────────────────────────── -->
   {#if errorMsg}
-    <div class="banner banner-error">{errorMsg}</div>
+    <div class="banner banner-error" data-testid="create-cert-error">{errorMsg}</div>
   {/if}
 
   {#if panelState === 'generating'}
-    <div class="banner banner-info">⏳ Generating certificate, please wait…</div>
+    <div class="banner banner-info" data-testid="create-cert-generating">⏳ Generating certificate, please wait…</div>
   {/if}
 
   <!-- ── Actions ──────────────────────────────────────────────────────────── -->
   <div class="actions">
-    <button class="btn-secondary" on:click={cancel} disabled={panelState === 'generating'}>
+    <button class="btn-secondary" data-testid="create-cert-cancel" on:click={cancel} disabled={panelState === 'generating'}>
       Cancel
     </button>
-    <button class="btn-primary" on:click={generate} disabled={panelState === 'generating'}>
+    <button class="btn-primary" data-testid="create-cert-generate" on:click={generate} disabled={panelState === 'generating'}>
       {#if panelState === 'generating'}
         {isCsrMode ? 'Generating CSR…' : 'Generating…'}
       {:else}

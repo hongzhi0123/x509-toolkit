@@ -237,9 +237,9 @@
   }
 </script>
 
-<main>
+<main data-testid="viewer-root">
   {#if state === 'idle'}
-    <div class="empty-state">
+    <div class="empty-state" data-testid="viewer-state-idle">
       <span class="state-icon">🔐</span>
       <h2>X.509 Certificate Toolkit</h2>
       <p>
@@ -250,13 +250,13 @@
     </div>
 
   {:else if state === 'loading'}
-    <div class="empty-state">
+    <div class="empty-state" data-testid="viewer-state-loading">
       <div class="spinner"></div>
       <p>{loadingStep || 'Parsing certificate…'}</p>
     </div>
 
   {:else if state === 'error'}
-    <div class="error-state">
+    <div class="error-state" data-testid="viewer-state-error">
       <div class="state-icon">⚠️</div>
       <h2>Could not parse certificate</h2>
       <p class="error-message">{errorMessage}</p>
@@ -266,6 +266,7 @@
     <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
 
   {:else if state === 'ready' && activeCert}
+    <div data-testid="viewer-state-ready">
     <div class="sticky-header" bind:clientHeight={stickyHeaderHeight}>
       {#if tlsConnectionInfo}
         <div class="tls-info-banner" class:expanded={tlsBannerExpanded}>
@@ -294,7 +295,7 @@
         </div>
       {/if}
       {#if displayChain.length > 1}
-        <nav class="chain-nav" aria-label="Certificate chain">
+        <nav class="chain-nav" aria-label="Certificate chain" data-testid="viewer-chain-nav">
           {#each displayChain as cert, i}
             <button
               class="chain-tab"
@@ -317,13 +318,13 @@
       {/if}
     </div>
     {#if errorMessage}
-      <div class="ca-issuer-error">
+      <div class="ca-issuer-error" data-testid="viewer-ca-error">
         <span>⚠️ {errorMessage}</span>
         <button class="dismiss-btn" on:click={() => errorMessage = ''}>✕</button>
       </div>
     {/if}
     {#if showNoChainBanner}
-      <div class="no-chain-banner">
+      <div class="no-chain-banner" data-testid="viewer-no-chain-banner">
         <span class="no-chain-label">{noChainLabel}</span>
         <div class="no-chain-actions">
           <button class="no-chain-btn" on:click={handleOpenCaFile}>
@@ -332,6 +333,7 @@
           {#each bannerAiaUrls as url}
             <button
               class="no-chain-btn no-chain-btn-aia"
+              data-testid="viewer-fetch-aia"
               disabled={loadingUrls.has(url)}
               on:click={() => loadCaIssuerUrl(url)}
               title={url}
@@ -364,6 +366,7 @@
         on:openConvertHub={handleOpenConvertHub}
       />
     {/key}
+    </div>
   {/if}
 </main>
 

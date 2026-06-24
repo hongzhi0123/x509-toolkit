@@ -41,9 +41,9 @@
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-<div class="backdrop" on:click|self={cancel}>
+<div class="backdrop" data-testid="passphrase-backdrop" on:click|self={cancel}>
   <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pp-title" on:keydown={handleKeydown}>
+  <div class="dialog" data-testid="passphrase-dialog" role="dialog" aria-modal="true" aria-labelledby="pp-title" on:keydown={handleKeydown}>
     <div class="dialog-header">
       <span class="lock-icon">🔒</span>
       <h2 id="pp-title">{title}</h2>
@@ -64,6 +64,7 @@
         {#if showPassword}
           <input
             id="pp-passphrase"
+            data-testid="passphrase-input"
             bind:this={inputEl}
             bind:value={passphrase}
             type="text"
@@ -75,6 +76,7 @@
         {:else}
           <input
             id="pp-passphrase"
+            data-testid="passphrase-input"
             bind:this={inputEl}
             bind:value={passphrase}
             type="password"
@@ -86,6 +88,7 @@
         {/if}
         <button
           class="reveal-btn"
+          data-testid="passphrase-toggle-visibility"
           type="button"
           title={showPassword ? 'Hide' : 'Show'}
           on:click={async () => { showPassword = !showPassword; await tick(); inputEl?.focus(); }}
@@ -101,6 +104,7 @@
           {#if showPassword}
             <input
               id="pp-confirm"
+              data-testid="passphrase-confirm-input"
               bind:value={confirm}
               type="text"
               class="passphrase-input"
@@ -112,6 +116,7 @@
           {:else}
             <input
               id="pp-confirm"
+              data-testid="passphrase-confirm-input"
               bind:value={confirm}
               type="password"
               class="passphrase-input"
@@ -129,8 +134,8 @@
     </div>
 
     <div class="dialog-footer">
-      <button class="btn btn-cancel" type="button" on:click={cancel}>Cancel</button>
-      <button class="btn btn-ok" type="button" on:click={submit} disabled={!canSubmit}>{buttonLabel}</button>
+      <button class="btn btn-cancel" data-testid="passphrase-cancel" type="button" on:click={cancel}>Cancel</button>
+      <button class="btn btn-ok" data-testid="passphrase-submit" type="button" on:click={submit} disabled={!canSubmit}>{buttonLabel}</button>
     </div>
   </div>
 </div>

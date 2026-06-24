@@ -144,3 +144,23 @@ npm run watch:webview    # vite dev build – rebuilds webview on webview-ui/src
 ```
 
 Press **F5** in VS Code (with this folder open) to launch the Extension Development Host.
+
+## Testing
+
+Run the package-level test suites:
+
+```bash
+# Unit and integration tests (existing suite)
+npm test -w packages/extension
+
+# Workflow E2E tests (new local suite)
+npm run test:e2e -w packages/extension
+```
+
+From the repository root you can also run:
+
+```bash
+npm run test:e2e
+```
+
+Current E2E coverage focuses on command-to-webview workflow behavior, including encrypted P12 open with passphrase round-trip and error handling.
