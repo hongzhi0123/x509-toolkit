@@ -15,6 +15,7 @@
     "test:core": "npm test -w packages/core",
     "test:ext": "npm test -w packages/extension",
     "test:e2e": "npm run test:e2e -w packages/extension",
+    "test:e2e:ui": "npm run build:webview && npm run build:ext && npm run test:e2e:ui -w packages/extension",
     "package": "npm run build && npm run package -w packages/extension"
   }
 }

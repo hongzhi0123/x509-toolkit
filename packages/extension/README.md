@@ -164,3 +164,10 @@ npm run test:e2e
 ```
 
 Current E2E coverage focuses on command-to-webview workflow behavior, including encrypted P12 open with passphrase round-trip and error handling.
+
+```bash
+# True UI-driven E2E (Playwright + Electron)
+npm run test:e2e:ui -w packages/extension
+```
+
+The UI-driven suite launches a real VS Code window and performs user-like keyboard and click interactions (e.g., Command Palette command execution and webview form input/click flows).
