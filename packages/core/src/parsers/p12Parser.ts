@@ -303,7 +303,21 @@ export function createP12Buffer(pemCerts: string[], password: string, privateKey
     // Strategy: derive the public key from the private key and compare SPKI DER bytes
     // against the public key embedded in the certificate.
     const certPubPem = forge.pki.publicKeyToPem(certs[0].publicKey as forge.pki.PublicKey);
-    const derivedSpki = crypto.createPublicKey(privateKeyBuf!).export({ type: 'spki', format: 'der' }) as Buffer;
+    // privateKeyBuf may be raw DER (e.g. PKCS#8 from WebCrypto) or PEM text.
+    // crypto.createPublicKey(Buffer) treats the buffer as PEM, so we must
+    // explicitly specify the format for DER buffers to avoid NO_START_LINE errors.
+    const isPem = privateKeyBuf!.slice(0, 27).toString('utf8').includes('-----BEGIN');
+    let privKeyObj: crypto.KeyObject;
+    if (isPem) {
+      privKeyObj = crypto.createPrivateKey(privateKeyBuf!);
+    } else {
+      try {
+        privKeyObj = crypto.createPrivateKey({ key: privateKeyBuf!, format: 'der', type: 'pkcs8' });
+      } catch {
+        privKeyObj = crypto.createPrivateKey({ key: privateKeyBuf!, format: 'der', type: 'sec1' });
+      }
+    }
+    const derivedSpki = crypto.createPublicKey(privKeyObj).export({ type: 'spki', format: 'der' }) as Buffer;
     const certSpki = crypto.createPublicKey(certPubPem).export({ type: 'spki', format: 'der' }) as Buffer;
     if (!derivedSpki.equals(certSpki)) {
       throw new Error('The private key does not match the public key in the certificate.');
