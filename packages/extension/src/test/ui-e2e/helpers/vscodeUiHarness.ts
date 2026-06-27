@@ -3,6 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { ElectronApplication, Page, Frame } from '@playwright/test';
 import { _electron as electron } from '@playwright/test';
+
+export type { ElectronApplication, Page, Frame };
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 
 const STEP_DELAY_MS = parseInt(process.env.UI_E2E_STEP_DELAY ?? '0', 10);
@@ -31,7 +33,7 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
   fs.mkdirSync(userSettingsDir, { recursive: true });
   fs.writeFileSync(
     path.join(userSettingsDir, 'settings.json'),
-    JSON.stringify({ 'git.enabled': false, 'gitlens.enabled': false }),
+    JSON.stringify({ 'git.enabled': false, 'gitlens.enabled': false, 'window.dialogStyle': 'native' }),
     'utf8'
   );
 
@@ -65,6 +67,21 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
   await closeRightSidePanels(page);
 
   return { app, page, userDataDir };
+}
+
+export async function stubSaveDialog(
+  app: ElectronApplication,
+  filePath: string,
+): Promise<void> {
+  console.log(`  [dialog] stubbing showSaveDialog → ${filePath}`);
+  const result = await app.evaluate((electron, savePath: string) => {
+    electron.dialog.showSaveDialog = async (...args: any[]) => {
+      return { canceled: false, filePath: savePath };
+    };
+    electron.dialog.showSaveDialogSync = (...args: any[]) => savePath;
+    return { patched: true };
+  }, filePath);
+  console.log(`  [dialog] stub result: ${JSON.stringify(result)}`);
 }
 
 export async function closeVscodeUiSession(session: VscodeUiSession): Promise<void> {
