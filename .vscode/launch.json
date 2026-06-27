@@ -5,10 +5,11 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/packages/extension"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/extension"
+      ],
       "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
-      "preLaunchTask": "${defaultBuildTask}",
-      "resolveSourceMapLocations": ["${workspaceFolder}/**", "!**/node_modules/**"]
+      "preLaunchTask": "build:extension"
     }
   ]
 }
