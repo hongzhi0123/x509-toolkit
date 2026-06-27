@@ -53,6 +53,17 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
   const page = await app.firstWindow();
   await page.waitForSelector('.monaco-workbench', { timeout: 60_000 });
 
+  // Open dummy.txt so column One has real content (prevents VS Code from creating Untitled files)
+  // await stepDelay(page, 'Opening dummy.txt via Quick Open');
+  // try {
+  //   await openQuickOpenFile(page, 'dummy.txt', 5_000);
+  // } catch {
+  //   await page.keyboard.press('Escape');
+  // }
+
+  // Close right-side panels (Copilot Chat, etc.) for more room
+  await closeRightSidePanels(page);
+
   return { app, page, userDataDir };
 }
 
@@ -80,19 +91,51 @@ export async function dismissNotifications(page: Page): Promise<void> {
 }
 
 export async function runCommandFromPalette(page: Page, commandTitle: string, itemTimeout = 15_000): Promise<void> {
+  console.log(`  [palette] executing: ${commandTitle}`);
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
   const widget = page.locator('.quick-input-widget');
   await widget.waitFor({ timeout: 15_000 });
   const input = widget.locator('input.input');
   await input.fill(`>${commandTitle}`);
 
+  await stepDelay(page, `Waiting for command palette item: ${commandTitle}`);
+
   const exactItem = widget.locator('.quick-input-list .monaco-list-row').filter({ hasText: commandTitle }).first();
   await exactItem.waitFor({ state: 'visible', timeout: itemTimeout });
-  await exactItem.dblclick();
+  await exactItem.click();
   await page.waitForTimeout(250);
   if (await widget.isVisible()) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(100);
+  }
+}
+
+export async function openQuickOpenFile(page: Page, fileName: string, itemTimeout = 15_000): Promise<void> {
+  console.log(`  [quickopen] opening file: ${fileName}`);
+  // Quick Open (Ctrl+P, no '>' prefix) to find and open a file
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
+  const widget = page.locator('.quick-input-widget');
+  await widget.waitFor({ timeout: 15_000 });
+  const input = widget.locator('input.input');
+  await input.fill(fileName);
+
+  const fileItem = widget.locator('.quick-input-list .monaco-list-row').filter({ hasText: fileName }).first();
+  await fileItem.waitFor({ state: 'visible', timeout: itemTimeout });
+  await fileItem.click();
+  await page.waitForTimeout(250);
+  if (await widget.isVisible()) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(100);
+  }
+}
+
+export async function closeRightSidePanels(page: Page): Promise<void> {
+  // Close the secondary/auxiliary sidebar (Copilot Chat lives there)
+  await stepDelay(page, 'Running: View > Toggle Secondary Side Bar');
+  try {
+    await runCommandFromPalette(page, 'View: Toggle Secondary Side Bar', 5_000);
+  } catch {
+    // Might not be open; that's fine
   }
 }
 

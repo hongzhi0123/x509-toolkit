@@ -28,7 +28,6 @@ test.describe('true UI E2E: create CSR flow', () => {
 
     await stepDelay(page, 'Running command from palette');
     await runCommandFromPalette(page, 'X.509 Toolkit: Create Certificate');
-    await page.keyboard.press('Escape');
 
     await stepDelay(page, 'Waiting for create-cert webview');
     const createFrame = await waitForWebviewFrameByTestId(page, 'create-cert-root');
@@ -36,6 +35,8 @@ test.describe('true UI E2E: create CSR flow', () => {
     await stepDelay(page, 'Filling in CN and selecting CSR');
     await createFrame.getByTestId('create-cert-cn').fill('ui-e2e.example');
     await expect(createFrame.getByTestId('create-cert-cn')).toHaveValue('ui-e2e.example');
+
+    await stepDelay(page, 'Selecting CSR mode');
     await createFrame.getByTestId('create-cert-signing-csr').check({ force: true });
     await expect(createFrame.getByTestId('create-cert-signing-csr')).toBeChecked();
 
@@ -48,5 +49,7 @@ test.describe('true UI E2E: create CSR flow', () => {
     await stepDelay(page, 'Waiting for viewer panel with CSR content');
     const viewerFrame = await waitForWebviewFrameByTestId(page, 'viewer-root', 30_000);
     await expect(viewerFrame.locator('.csr-cn')).toContainText('ui-e2e.example', { timeout: 15_000 });
+
+    await stepDelay(page, 'Waiting before clossing VS Code session');
   });
 });

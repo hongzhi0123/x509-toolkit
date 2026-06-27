@@ -36,8 +36,8 @@ test.describe('true UI E2E: open file + passphrase flow', () => {
     const explorerFile = page.locator('.explorer-viewlet [role="treeitem"]').filter({ hasText: 'test-rsa-2048' }).first();
     await explorerFile.waitFor({ state: 'visible', timeout: 20_000 });
 
-    await stepDelay(page, 'Dismiss notifications before right-click');
-    await dismissNotifications(page);
+    // await stepDelay(page, 'Dismiss notifications before right-click');
+    // await dismissNotifications(page);
 
     await stepDelay(page, 'Right-clicking via keyboard');
     await explorerFile.click();
@@ -61,5 +61,7 @@ test.describe('true UI E2E: open file + passphrase flow', () => {
     await stepDelay(page, 'Asserting viewer shows certificate data');
     await expect(viewerFrame.getByTestId('viewer-state-ready')).toBeVisible();
     await expect(viewerFrame.locator('.cert-cn')).toContainText(CERT_CN);
+
+    await stepDelay(page, 'Waiting before clossing VS Code session');
   });
 });
