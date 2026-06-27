@@ -128,15 +128,17 @@
     "test": "node ./out/test/test/runTest.js",
     "pretest:e2e": "tsc -p tsconfig.test.json",
     "test:e2e": "node ./out/test/test/runE2E.js",
-    "test:e2e:ui": "playwright test -c ./playwright.ui-e2e.config.ts"
+    "test:e2e:ui": "playwright test -c ./playwright.ui-e2e.config.ts",
+    "generate-test-fixtures": "node ./scripts/generate-test-fixtures.cjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/sinon": "^21.0.1",
     "@types/vscode": "^1.85.0",
-    "@playwright/test": "^1.54.2",
     "@vscode/test-electron": "^2.5.2",
+    "dotenv": "^16.4.7",
     "mocha": "^11.7.6",
     "sinon": "^22.0.0",
     "ts-loader": "^9.5.1",

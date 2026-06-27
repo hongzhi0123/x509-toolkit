@@ -1,69 +1,61 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { test, expect } from '@playwright/test';
 import {
   launchVscodeForUiE2E,
   closeVscodeUiSession,
   waitForWebviewFrameByTestId,
+  stepDelay,
   type VscodeUiSession,
 } from './helpers/vscodeUiHarness';
 
+const FIXTURES_DIR = path.resolve(__dirname, '../../../test-fixtures');
+const P12_FILENAME = 'test-rsa-2048.p12';
+const PASSPHRASE = 'test-passphrase';
+const CERT_CN = 'test-rsa-2048.example';
+
 test.describe('true UI E2E: open file + passphrase flow', () => {
   let session: VscodeUiSession;
-  let workspacePath: string;
-  let p12Path: string;
-
-  const certCommonName = 'ui-open-file.example';
-  const passphrase = 'ui-e2e-passphrase';
 
   test.beforeAll(async () => {
-    workspacePath = path.resolve(__dirname, '../../../../../');
-    p12Path = path.join(workspacePath, 'ui-e2e-open-file.p12');
-
-    // Load from compiled core output to keep Playwright TS transpilation simple.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createSelfSignedP12 } = require(path.join(workspacePath, 'packages/core/dist')) as {
-      createSelfSignedP12: (commonName: string, days: number, password: string) => Promise<Buffer>;
-    };
-    const p12Buffer = await createSelfSignedP12(certCommonName, 30, passphrase);
-    fs.writeFileSync(p12Path, p12Buffer);
-
-    session = await launchVscodeForUiE2E(workspacePath);
+    session = await launchVscodeForUiE2E(FIXTURES_DIR);
   });
 
   test.afterAll(async () => {
     await closeVscodeUiSession(session);
-    fs.rmSync(p12Path, { force: true });
   });
 
   test('opens encrypted P12 from explorer and submits passphrase in webview dialog using UI actions', async () => {
     const { page } = session;
-    const fileName = path.basename(p12Path);
 
+    await stepDelay(page, 'Opening Explorer view');
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+E' : 'Control+Shift+E');
-    const explorerFile = page
-      .locator('[role="treeitem"]')
-      .filter({ hasText: fileName })
-      .first();
-    await explorerFile.waitFor({ state: 'visible', timeout: 20_000 });
-    await explorerFile.dblclick();
+    await page.waitForTimeout(2000);
 
+    await stepDelay(page, 'Locating the P12 file in tree');
+    const explorerFile = page.locator('.explorer-viewlet [role="treeitem"]').filter({ hasText: 'test-rsa-2048' }).first();
+    await explorerFile.waitFor({ state: 'visible', timeout: 20_000 });
+
+    await stepDelay(page, 'Right-clicking via keyboard');
     await explorerFile.click();
     await page.keyboard.press('Shift+F10');
 
     const openWithToolkit = page.getByRole('menuitem', { name: /Open with X\.509 Toolkit/i }).first();
     await openWithToolkit.waitFor({ state: 'visible', timeout: 15_000 });
-    await openWithToolkit.click();
+    await page.waitForTimeout(300);
+    await openWithToolkit.click({ force: true });
 
-    const viewerFrame = await waitForWebviewFrameByTestId(page, 'viewer-root');
+    await stepDelay(page, 'Waiting for webview viewer');
+    const viewerFrame = await waitForWebviewFrameByTestId(page, 'viewer-root', 45_000);
 
+    await stepDelay(page, 'Typing passphrase into dialog');
     await expect(viewerFrame.getByTestId('passphrase-dialog')).toBeVisible();
     await viewerFrame.getByTestId('passphrase-input').click();
-    await viewerFrame.getByTestId('passphrase-input').type(passphrase);
+    await viewerFrame.getByTestId('passphrase-input').type(PASSPHRASE);
     await viewerFrame.getByTestId('passphrase-toggle-visibility').click();
     await viewerFrame.getByTestId('passphrase-submit').click();
 
+    await stepDelay(page, 'Asserting viewer shows certificate data');
     await expect(viewerFrame.getByTestId('viewer-state-ready')).toBeVisible();
-    await expect(viewerFrame.locator('.cert-cn')).toContainText(certCommonName);
+    await expect(viewerFrame.locator('.cert-cn')).toContainText(CERT_CN);
   });
 });

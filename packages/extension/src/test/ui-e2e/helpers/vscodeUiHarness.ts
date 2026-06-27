@@ -5,6 +5,15 @@ import type { ElectronApplication, Page, Frame } from '@playwright/test';
 import { _electron as electron } from '@playwright/test';
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 
+const STEP_DELAY_MS = parseInt(process.env.UI_E2E_STEP_DELAY ?? '0', 10);
+
+export async function stepDelay(page: Page, label: string): Promise<void> {
+  if (STEP_DELAY_MS > 0) {
+    console.log(`  [step] ${label} (pause ${STEP_DELAY_MS}ms)...`);
+    await page.waitForTimeout(STEP_DELAY_MS);
+  }
+}
+
 export type VscodeUiSession = {
   app: ElectronApplication;
   page: Page;
@@ -25,6 +34,8 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
       '--skip-welcome',
       '--skip-release-notes',
       '--disable-updates',
+      '--disable-workspace-trust',
+      '--disable-extensions',
       '--new-window',
     ],
   });
@@ -36,6 +47,10 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
 }
 
 export async function closeVscodeUiSession(session: VscodeUiSession): Promise<void> {
+  if (STEP_DELAY_MS > 0) {
+    console.log('  [step] Closing VS Code session...');
+  }
+
   await session.app.close();
   fs.rmSync(session.userDataDir, { recursive: true, force: true });
 }

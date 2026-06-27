@@ -1,3 +1,9 @@
+import * as path from 'path';
+import { config } from 'dotenv';
+
+const envPath = path.resolve(__dirname, '../../.env');
+config({ path: envPath });
+
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
