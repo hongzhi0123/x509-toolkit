@@ -4,6 +4,7 @@ import {
   launchVscodeForUiE2E,
   closeVscodeUiSession,
   waitForWebviewFrameByTestId,
+  dismissNotifications,
   stepDelay,
   type VscodeUiSession,
 } from './helpers/vscodeUiHarness';
@@ -34,6 +35,9 @@ test.describe('true UI E2E: open file + passphrase flow', () => {
     await stepDelay(page, 'Locating the P12 file in tree');
     const explorerFile = page.locator('.explorer-viewlet [role="treeitem"]').filter({ hasText: 'test-rsa-2048' }).first();
     await explorerFile.waitFor({ state: 'visible', timeout: 20_000 });
+
+    await stepDelay(page, 'Dismiss notifications before right-click');
+    await dismissNotifications(page);
 
     await stepDelay(page, 'Right-clicking via keyboard');
     await explorerFile.click();

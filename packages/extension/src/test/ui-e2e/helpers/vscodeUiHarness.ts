@@ -24,6 +24,16 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
   const vscodeExecutablePath = await downloadAndUnzipVSCode('1.126.0');
   const extensionPath = path.resolve(__dirname, '../../../../');
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'x509-vscode-ui-e2e-'));
+  const extensionsDir = path.join(userDataDir, 'extensions');
+  fs.mkdirSync(extensionsDir, { recursive: true });
+  // Pre-configure settings to avoid notification popups
+  const userSettingsDir = path.join(userDataDir, 'User');
+  fs.mkdirSync(userSettingsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(userSettingsDir, 'settings.json'),
+    JSON.stringify({ 'git.enabled': false, 'gitlens.enabled': false }),
+    'utf8'
+  );
 
   const app = await electron.launch({
     executablePath: vscodeExecutablePath,
@@ -35,7 +45,7 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
       '--skip-release-notes',
       '--disable-updates',
       '--disable-workspace-trust',
-      '--disable-extensions',
+      `--extensions-dir=${extensionsDir}`,
       '--new-window',
     ],
   });
@@ -55,7 +65,21 @@ export async function closeVscodeUiSession(session: VscodeUiSession): Promise<vo
   fs.rmSync(session.userDataDir, { recursive: true, force: true });
 }
 
-export async function runCommandFromPalette(page: Page, commandTitle: string): Promise<void> {
+export async function dismissNotifications(page: Page): Promise<void> {
+  // Attempt to clear via command palette
+  try {
+    await runCommandFromPalette(page, 'Notifications: Clear All', 5_000);
+  } catch {
+    // If the command palette fails (e.g. modal dialog blocking), fall through
+  }
+  // Aggressively dismiss any open dialogs/toasts with Escape
+  for (let i = 0; i < 10; i++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+  }
+}
+
+export async function runCommandFromPalette(page: Page, commandTitle: string, itemTimeout = 15_000): Promise<void> {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
   const widget = page.locator('.quick-input-widget');
   await widget.waitFor({ timeout: 15_000 });
@@ -63,7 +87,7 @@ export async function runCommandFromPalette(page: Page, commandTitle: string): P
   await input.fill(`>${commandTitle}`);
 
   const exactItem = widget.locator('.quick-input-list .monaco-list-row').filter({ hasText: commandTitle }).first();
-  await exactItem.waitFor({ state: 'visible', timeout: 15_000 });
+  await exactItem.waitFor({ state: 'visible', timeout: itemTimeout });
   await exactItem.dblclick();
   await page.waitForTimeout(250);
   if (await widget.isVisible()) {

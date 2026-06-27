@@ -5,6 +5,7 @@ import {
   closeVscodeUiSession,
   runCommandFromPalette,
   waitForWebviewFrameByTestId,
+  dismissNotifications,
   stepDelay,
   type VscodeUiSession,
 } from './helpers/vscodeUiHarness';
@@ -22,7 +23,7 @@ test.describe('true UI E2E: create CSR flow', () => {
     await closeVscodeUiSession(session);
   });
 
-  test('opens Create Certificate panel, selects CSR mode and generates a CSR', async () => {
+  test('opens Create Certificate panel, selects CSR mode, generates a CSR, and validates the result', async () => {
     const { page } = session;
 
     await stepDelay(page, 'Running command from palette');
@@ -35,12 +36,17 @@ test.describe('true UI E2E: create CSR flow', () => {
     await stepDelay(page, 'Filling in CN and selecting CSR');
     await createFrame.getByTestId('create-cert-cn').fill('ui-e2e.example');
     await expect(createFrame.getByTestId('create-cert-cn')).toHaveValue('ui-e2e.example');
-    await stepDelay(page, 'Checking CSR radio button');
     await createFrame.getByTestId('create-cert-signing-csr').check({ force: true });
     await expect(createFrame.getByTestId('create-cert-signing-csr')).toBeChecked();
 
+    await stepDelay(page, 'Wait for notifications to auto-dismiss');
+    await page.waitForTimeout(3000);
+
     await stepDelay(page, 'Clicking Generate button');
-    await createFrame.getByTestId('create-cert-generate').click({ force: true });
-    await expect(createFrame.getByTestId('create-cert-generate')).toBeVisible();
+    await createFrame.getByTestId('create-cert-generate').click();
+
+    await stepDelay(page, 'Waiting for viewer panel with CSR content');
+    const viewerFrame = await waitForWebviewFrameByTestId(page, 'viewer-root', 30_000);
+    await expect(viewerFrame.locator('.csr-cn')).toContainText('ui-e2e.example', { timeout: 15_000 });
   });
 });
