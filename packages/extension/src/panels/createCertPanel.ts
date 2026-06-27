@@ -40,14 +40,14 @@ export function openCreateCertPanel(
     if (createCertPanelRef) {
       createCertQueue.reset();
       createCertPanelRef.webview.html = buildHtml(createCertPanelRef.webview, extensionUri, { title: 'Create Certificate', dataView: 'createCert' });
-      createCertPanelRef.reveal(vscode.ViewColumn.One, false);
+      createCertPanelRef.reveal(vscode.ViewColumn.Two, false);
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       'x509CreateCert',
       'Create Certificate',
-      { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
+      { viewColumn: vscode.ViewColumn.Two, preserveFocus: false },
       {
         enableScripts: true,
         localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')],
@@ -212,13 +212,13 @@ export function openCreateCertPanel(
               }
               pendingCsrPem = csrPem;
 
-              // Show the CSR in the viewer panel (with key stored in memory) and close this panel
+              // Close the create panel and show CSR in viewer at the same column
+              panel.dispose();
+              const viewerPanel = getOrCreatePanel(extensionUri, context);
               try {
-                const viewerPanel = getOrCreatePanel(extensionUri, context);
                 const csrData = await parseCsr(csrPem);
                 sendCsr(viewerPanel, csrData, pendingCsrKeyPem);
               } catch { /* non-fatal: viewer key/CSR still work */ }
-              panel.dispose();
             } catch (e) {
               createCertQueue.post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
             }
