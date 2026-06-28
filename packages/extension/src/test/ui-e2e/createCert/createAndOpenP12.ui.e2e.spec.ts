@@ -10,9 +10,9 @@ import {
   stubSaveDialog,
   stepDelay,
   type VscodeUiSession,
-} from './helpers/vscodeUiHarness';
+  FIXTURES_DIR,
+} from '../helpers/vscodeUiHarness';
 
-const FIXTURES_DIR = path.resolve(__dirname, '../../../test-fixtures');
 const SAVED_P12 = 'ui-e2e-self-signed.p12';
 const SAVED_P12_PATH = path.join(FIXTURES_DIR, SAVED_P12);
 const CERT_CN = 'self-signed-test.example';
@@ -22,7 +22,7 @@ test.describe.serial('true UI E2E: create and open P12 certificate', () => {
   let session: VscodeUiSession;
 
   test.beforeAll(async () => {
-    session = await launchVscodeForUiE2E(FIXTURES_DIR);
+    session = await launchVscodeForUiE2E();
     await stubSaveDialog(session.app, SAVED_P12_PATH);
   });
 
@@ -71,7 +71,7 @@ test.describe.serial('true UI E2E: create and open P12 certificate', () => {
     const explorerFile = page.locator('.explorer-viewlet [role="treeitem"]').filter({ hasText: 'ui-e2e-self-signed' }).first();
     await explorerFile.waitFor({ state: 'visible', timeout: 20_000 });
 
-    await dismissNotifications(page);
+    // await dismissNotifications(page);
 
     await stepDelay(page, 'Right-clicking via keyboard');
     await explorerFile.click();

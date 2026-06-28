@@ -8,6 +8,7 @@ export type { ElectronApplication, Page, Frame };
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 
 const STEP_DELAY_MS = parseInt(process.env.UI_E2E_STEP_DELAY ?? '0', 10);
+export const FIXTURES_DIR = path.resolve(__dirname, '../../../../test-fixtures');
 
 export async function stepDelay(page: Page, label: string): Promise<void> {
   if (STEP_DELAY_MS > 0) {
@@ -22,7 +23,7 @@ export type VscodeUiSession = {
   userDataDir: string;
 };
 
-export async function launchVscodeForUiE2E(workspacePath: string): Promise<VscodeUiSession> {
+export async function launchVscodeForUiE2E(): Promise<VscodeUiSession> {
   const vscodeExecutablePath = await downloadAndUnzipVSCode('1.126.0');
   const extensionPath = path.resolve(__dirname, '../../../../');
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'x509-vscode-ui-e2e-'));
@@ -37,10 +38,12 @@ export async function launchVscodeForUiE2E(workspacePath: string): Promise<Vscod
     'utf8'
   );
 
+  console.log(`Fixtures dir: ${FIXTURES_DIR}`)
+
   const app = await electron.launch({
     executablePath: vscodeExecutablePath,
     args: [
-      workspacePath,
+      FIXTURES_DIR,
       `--extensionDevelopmentPath=${extensionPath}`,
       `--user-data-dir=${userDataDir}`,
       '--skip-welcome',

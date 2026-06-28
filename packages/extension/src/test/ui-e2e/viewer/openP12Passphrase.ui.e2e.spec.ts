@@ -7,7 +7,7 @@ import {
   dismissNotifications,
   stepDelay,
   type VscodeUiSession,
-} from './helpers/vscodeUiHarness';
+} from '../helpers/vscodeUiHarness';
 
 const FIXTURES_DIR = path.resolve(__dirname, '../../../test-fixtures');
 const P12_FILENAME = 'test-rsa-2048.p12';
@@ -18,7 +18,7 @@ test.describe('true UI E2E: open file + passphrase flow', () => {
   let session: VscodeUiSession;
 
   test.beforeAll(async () => {
-    session = await launchVscodeForUiE2E(FIXTURES_DIR);
+    session = await launchVscodeForUiE2E();
   });
 
   test.afterAll(async () => {
