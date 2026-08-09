@@ -140,7 +140,7 @@
   ];
 </script>
 
-<div class="hub">
+<div class="hub" data-testid="convert-hub-root">
   <header class="hub-header">
     <h1 class="hub-title">🔄 Format Conversion Hub</h1>
     <p class="hub-subtitle">Convert, extract, and package certificate files</p>

@@ -2,84 +2,167 @@
 
 ## Project Overview
 
-**X.509 Certificate Toolkit** is a VS Code extension (publisher: `hongzhi0123`) that parses and displays X.509 certificates from PEM, DER, and PKCS#12/PFX/P12 files. It also supports creating self-signed and CA-signed certificates. The extension is packaged as a `.vsix` and targets VS Code ≥ 1.85.
+**X.509 Certificate Toolkit** is a VS Code extension (publisher: `hongzhi0123`) that parses and displays X.509 certificates, CRLs, and private/public keys from PEM, DER, PKCS#12/PFX/P12, and key files. It also supports creating self-signed and CA-signed certificates, generating key pairs, inspecting live TLS server certificates, and converting between certificate formats. The extension is packaged as a `.vsix` and targets VS Code ≥ 1.85.
 
 ---
 
-## Architecture: Two Distinct Runtimes
+## Monorepo Structure
 
-The project is split into two independently compiled halves that communicate exclusively via VS Code's webview message API.
+The project is an **npm workspace monorepo** rooted at the workspace root. All packages live under `packages/`:
 
-### 1. Extension Host (`src/`)
+```
+packages/
+  core/        — @x509-toolkit/core (pure library: parsers, types, utilities)
+  extension/   — VS Code extension host (webpack bundle)
+  webview-ui/  — Svelte webview UI (Vite bundle)
+```
+
+---
+
+## Architecture: Three Independent Runtimes
+
+### 1. Core Library (`packages/core/`)
+- Pure TypeScript — no VS Code or DOM dependencies.
+- Built with **`tsc`** → `packages/core/dist/`.
+- Published internally as `@x509-toolkit/core`; consumed by both the extension host and (via re-export) the webview.
+- Contains all parsers, shared types, and utility functions.
+
+### 2. Extension Host (`packages/extension/`)
 - Runs in Node.js inside VS Code's extension host process.
-- Compiled with **webpack** (`webpack.config.js`) → `dist/extension.js`.
-- Entry point: `src/extension.ts`.
-- Has access to VS Code API, Node.js built-ins (`fs`, `crypto`, `https`), and npm packages.
+- Compiled with **webpack** (`webpack.config.js`) → `packages/extension/dist/extension.js`.
+- Entry point: `packages/extension/src/extension.ts`.
+- Depends on `@x509-toolkit/core`, VS Code API, Node.js built-ins (`fs`, `tls`, `https`).
 
-### 2. Webview UI (`webview-ui/`)
-- Runs in a sandboxed browser context (Chromium) inside a VS Code `WebviewPanel`.
-- Built with **Vite + Svelte 4** → `dist/webview/main.js` + `dist/webview/styles.css`.
-- Entry point: `webview-ui/src/main.ts` → `webview-ui/src/App.svelte`.
+### 3. Webview UI (`packages/webview-ui/`)
+- Runs in a sandboxed browser context (Chromium) inside VS Code `WebviewPanel`s.
+- Built with **Vite + Svelte 4** → `packages/webview-ui/dist/`.
+- Entry point: `packages/webview-ui/src/main.ts` — routes to the correct panel component based on `data-view` attribute.
 - Has NO access to Node.js or VS Code APIs — uses `acquireVsCodeApi()` to post/receive messages.
+- Types are imported directly from `@x509-toolkit/core` via a thin re-export in `types.ts`.
 
 ---
 
-## Source File Map (`src/`)
+## Core Library File Map (`packages/core/src/`)
 
+### `types/`
 | File | Responsibility |
 |------|---------------|
-| `extension.ts` | Registers all VS Code commands; orchestrates file open dialogs, text selection parsing, and panel lifecycle |
-| `panelManager.ts` | Creates/reuses the single certificate viewer `WebviewPanel`; handles all webview↔extension messaging (including the passphrase request bridge and CA issuer cert download via HTTP/HTTPS) |
-| `createCertPanel.ts` | Creates/manages the separate "Create Certificate" `WebviewPanel`; handles CA cert/key file pickers and calls `generateCertificate` |
-| `certificateParser.ts` | Core parser — uses `@peculiar/x509` + `@peculiar/webcrypto` to parse a single DER/PEM certificate buffer into a `CertificateData` object; also exposes `parsePEMChain` for multi-cert PEM blocks |
-| `p12Parser.ts` | Uses `node-forge` to open PKCS#12/PFX files; matches private keys to certs using `localKeyId`; also contains `generateCertificate` (creates RSA/EC certs with `@peculiar/x509`) and `createP12Buffer` / `loadAndValidatePrivateKey` helpers |
-| `certUtils.ts` | Pure helper utilities: `bufToHex` (produces `aa:bb:cc` hex strings) and `parseDNString` (parses DN strings into `DistinguishedName`) |
-| `derUtils.ts` | Minimal DER/TLV reader: `derTLV`, `derOid`, `derInt`, `derStr` — used for bespoke extension parsing without a full ASN.1 library |
-| `oidMaps.ts` | Static lookup tables: `EXT_NAMES` (extension OID → human name), `EKU_NAMES`, `SIG_ALG_NAMES` |
-| `qcStatements.ts` | Parser for the QC Statements extension (OID 1.3.6.1.5.5.7.1.3), including ETSI EN 319 412-5 and PSD2 role names |
-| `types.ts` | **Shared type definitions** — kept free of Node.js/VS Code imports so they can be mirrored verbatim in the webview. Contains `CertificateData`, `CertExtension`, `PrivateKeyInfo`, `CertCreateParams`, and the full message protocol types (`ExtToWebviewMsg`, `WebviewToExtMsg`, `CreateCertToExtMsg`, `ExtToCreateCertMsg`) |
+| `types.ts` | **Canonical shared type definitions** — all data shapes (`CertificateData`, `CsrData`, `CrlData`, `StandaloneKeyData`, `TlsConnectionInfo`, etc.) and the complete message protocol discriminated unions for every panel |
+| `oidMaps.ts` | Static lookup tables: `EXT_NAMES` (extension OID → human name), `EKU_NAMES`, `SIG_ALG_NAMES`, `DN_ATTR_NAMES` |
+| `qcEuPsd2.ts` | ETSI PSD2/QC statement type definitions and role name mappings |
+
+### `parsers/`
+| File | Responsibility |
+|------|---------------|
+| `certificateParser.ts` | `parseCertificate()`, `parsePEMChain()`, `parseCsr()` — uses `@peculiar/x509` + `@peculiar/webcrypto` |
+| `crlParser.ts` | `parseCrl()` — parses PEM/DER Certificate Revocation Lists into `CrlData` |
+| `keyParser.ts` | `parseKeyFile()`, `isEncryptedKey()`, `generateKeyPair()` — key loading and generation using Node.js `crypto` |
+| `p12Parser.ts` | `parseP12()`, `createSelfSignedP12()`, `generateCertificate()`, `generateCsr()`, `createP12Buffer()` — PKCS#12 via `node-forge` + `@peculiar/x509` |
+| `qcStatements.ts` | `QcStatementsExtension` class — parses OID 1.3.6.1.5.5.7.1.3 (ETSI EN 319 412-5 and PSD2) |
+
+### `utils/`
+| File | Responsibility |
+|------|---------------|
+| `certUtils.ts` | `bufToHex()` (produces `AA:BB:CC` hex), `parseDNString()` |
+| `derUtils.ts` | Minimal DER/TLV reader: `derTLV`, `derOid`, `derInt`, `derStr` |
+| `caChainUtils.ts` | Utilities for building and walking CA certificate chains |
 
 ---
 
-## Webview UI File Map (`webview-ui/src/`)
+## Extension Host File Map (`packages/extension/src/`)
 
+### `extension.ts`
+Registers all VS Code commands via `context.subscriptions`.
+
+### `commands/`
 | File | Responsibility |
 |------|---------------|
-| `App.svelte` | Root component — owns the app state machine (`idle/loading/ready/error`), the certificate chain array, active index, downloaded CA issuer certs, imported private keys, and the passphrase dialog state. Handles all incoming extension messages |
-| `lib/CertificateView.svelte` | Renders all fields for the active `CertificateData`: subject/issuer DN, validity, public key, extensions, fingerprints, raw PEM, private key section |
-| `lib/CreateCertPanel.svelte` | The certificate creation form (key algorithm, DN fields, SANs, key usage, EKU, validity, signing mode, password) |
-| `lib/ExtensionsList.svelte` | Renders the list of certificate extensions |
-| `lib/FieldRow.svelte` | Generic label/value row used throughout the UI |
-| `lib/HexValue.svelte` | Renders a colon-separated hex string with copy-to-clipboard |
-| `lib/Fingerprints.svelte` | Renders SHA-1 and SHA-256 fingerprints with copy button |
-| `lib/PassphraseDialog.svelte` | Modal dialog for the passphrase request flow; responds to `requestPassphrase` messages |
-| `lib/SectionCard.svelte` | Collapsible card wrapper for groups of fields |
-| `lib/ValidityIndicator.svelte` | Color-coded validity badge (valid / expiring soon / expired) |
-| `types.ts` | Mirror of `src/types.ts` — **must be kept in sync manually** |
+| `showFromSelection.ts` | Parses selected editor text and opens the main viewer |
+| `openFile.ts` | File open dialog for PEM/DER/PFX/key/CRL files; routes to the appropriate panel |
+| `openFromExplorer.ts` | Explorer context menu handler — opens the selected file with the correct panel |
+| `inspectTlsServer.ts` | Prompts for host:port, performs TLS handshake via Node.js `tls` module, displays the peer chain |
+| `convertFormat.ts` | Opens the Format Conversion Hub panel |
+
+### `panels/`
+| File | Responsibility |
+|------|---------------|
+| `mainViewerPanel.ts` | Main certificate/CSR viewer `WebviewPanel`; handles chain display, passphrase bridge, CA issuer download, private key import, and message routing |
+| `createCertPanel.ts` | Certificate/CSR generation panel; handles CA cert/key file pickers and calls `generateCertificate` / `generateCsr` |
+| `crlPanel.ts` | CRL viewer `WebviewPanel` |
+| `keyPanel.ts` | Standalone key viewer `WebviewPanel`; handles passphrase bridge for encrypted keys |
+| `keyGenPanel.ts` | Key generation panel; handles save dialogs and input dialogs |
+| `convertPanel.ts` | Format Conversion Hub panel; handles file picking and conversion operations |
+
+### `utils/`
+| File | Responsibility |
+|------|---------------|
+| `handleX509Input.ts` | Adapts parser output to panel messaging; routes parsed data to the correct panel |
+| `fileActionsUtils.ts` | Shared helpers for file save dialogs and file I/O |
+| `keyImportUtils.ts` | Helpers for importing private key files into certificate slots |
+| `messageRouterUtils.ts` | Routes incoming `WebviewToExtMsg` messages to the correct handler |
+| `requestBridgeUtils.ts` | Implements the `requestId`-keyed Promise bridge for passphrase and input-dialog round-trips |
+| `webviewPanelUtils.ts` | Shared `buildHtml()` helper that injects a CSP nonce and the correct `dist/webview` URIs |
+
+---
+
+## Webview UI File Map (`packages/webview-ui/src/`)
+
+### `panels/` — top-level view coordinators (use `acquireVsCodeApi()`)
+| File | Responsibility |
+|------|---------------|
+| `App.svelte` | Main cert/CSR viewer — owns state machine (`idle/loading/ready/error`), cert chain, active index, CA issuer certs, imported private keys, passphrase/input-dialog state |
+| `CreateCertPanel.svelte` | Certificate/CSR creation form (algorithm, DN, SANs, key usage, EKU, validity, signing mode, password) |
+| `CrlView.svelte` | CRL viewer — displays `CrlData` including revoked certificate list |
+| `KeyViewer.svelte` | Standalone key display and export |
+| `KeyGenPanel.svelte` | Key generation form and result display |
+| `ConvertHub.svelte` | Format conversion hub — file slot management and conversion operations |
+
+### `lib/` — pure UI components (no `acquireVsCodeApi`)
+| File | Responsibility |
+|------|---------------|
+| `CertificateView.svelte` | Renders all fields for a `CertificateData`: DN, validity, public key, extensions, fingerprints, raw PEM, private key section |
+| `CsrView.svelte` | Renders CSR fields from `CsrData` |
+| `ExtensionsList.svelte` | Renders the list of certificate extensions |
+| `FieldRow.svelte` | Generic label/value row |
+| `HexValue.svelte` | Colon-separated hex string with copy-to-clipboard |
+| `Fingerprints.svelte` | SHA-1 and SHA-256 fingerprints with copy button |
+| `PassphraseDialog.svelte` | Modal for passphrase requests (`requestPassphrase` messages) |
+| `InputDialog.svelte` | Generic multi-field modal for `requestInputDialog` messages |
+| `SectionCard.svelte` | Collapsible card wrapper |
+| `ValidityIndicator.svelte` | Color-coded validity badge (valid / expiring soon / expired) |
+
+### `types.ts`
+Re-exports everything from `@x509-toolkit/core` — **not a manual mirror**. No duplication needed.
 
 ---
 
 ## Message Protocol
 
-All communication between the extension host and webview uses typed discriminated unions defined in `src/types.ts`.
+All panel communication uses typed discriminated unions defined in `packages/core/src/types/types.ts`.
 
-**Extension → Viewer Webview** (`ExtToWebviewMsg`):
-- `loading` — clears the panel, shows spinner
-- `certificate` — sends `CertificateData[]` chain + `activeIndex`
-- `error` — displays error message
-- `caIssuerCert` / `caIssuerError` — result of downloading a CA issuer cert from an AIA URL
-- `privateKeyImported` / `privateKeyImportError` — result of importing a private key into a cert slot
-- `requestPassphrase` — triggers the in-panel passphrase dialog (identified by `requestId`)
+**Main Viewer** (`ExtToWebviewMsg` / `WebviewToExtMsg`):
+- Ext → Webview: `loading`, `tlsProgress`, `certificate` (chain + optional `TlsConnectionInfo`), `csr`, `error`, `caIssuerCert`, `caIssuerError`, `privateKeyImported`, `privateKeyImportError`, `requestPassphrase`, `requestInputDialog`
+- Webview → Ext: `ready`, `copyToClipboard`, `selectCert`, `downloadCaIssuer`, `exportCert`, `exportPrivateKey`, `createP12`, `importPrivateKey`, `openCaCertFile`, `signCsr`, `saveCsrFile`, `savePrivateKey`, `saveBothFiles`, `passphraseResponse`, `inputDialogResponse`, `openConvertHub`
 
-**Viewer Webview → Extension** (`WebviewToExtMsg`):
-- `ready` — webview is initialised
-- `copyToClipboard` — asks extension to write text to the clipboard
-- `fetchCaIssuerCert` — asks extension to download a cert from a URL
-- `importPrivateKey` — asks extension to load a private key file
-- `passphraseResponse` — returns the passphrase (or `null` for cancel) matching a `requestId`
+**Create Cert Panel** (`CreateCertToExtMsg` / `ExtToCreateCertMsg`):
+- Webview → Ext: `ready`, `pickCaCert`, `pickCaKey`, `generate`, `generateCsr`, `saveCsrFile`, `savePrivateKey`, `cancel`, `inputDialogResponse`
+- Ext → Webview: `caCertLoaded`, `caKeyLoaded`, `generating`, `done`, `csrReady`, `error`, `requestInputDialog`
 
-**Create Cert Webview ↔ Extension** (`CreateCertToExtMsg` / `ExtToCreateCertMsg`):
-- Separate panel/message types for the certificate generation workflow.
+**CRL Viewer** (`CrlViewerToExtMsg` / `ExtToCrlViewerMsg`):
+- Webview → Ext: `crlViewerReady`, `copyToClipboard`
+- Ext → Webview: `crlLoading`, `crlData`, `crlError`
+
+**Key Viewer** (`KeyViewerToExtMsg` / `ExtToKeyViewerMsg`):
+- Webview → Ext: `keyViewerReady`, `copyToClipboard`, `exportPrivateKey`, `exportPublicKey`, `passphraseResponse`, `inputDialogResponse`
+- Ext → Webview: `keyLoading`, `keyData`, `keyError`, `requestPassphrase`, `requestInputDialog`
+
+**Key Generator** (`KeyGenToExtMsg` / `ExtToKeyGenMsg`):
+- Webview → Ext: `keyGenReady`, `keyGenGenerate`, `keyGenSavePrivateKey`, `keyGenSavePublicKey`, `keyGenViewKey`, `copyToClipboard`, `inputDialogResponse`
+- Ext → Webview: `keyGenGenerating`, `keyGenDone`, `keyGenError`, `requestInputDialog`
+
+**Format Conversion Hub** (`ConvertToExtMsg` / `ExtToConvertMsg`):
+- Webview → Ext: `convertReady`, `convertPickFile`, `convertPickFiles`, `convertExecuteExtractP12`, `convertExecuteBuildP12`, `convertExecuteConvertFormat`, `convertExecuteBundleChain`
+- Ext → Webview: `convertFileSelected`, `convertResult`, `convertError`
 
 ---
 
@@ -87,32 +170,34 @@ All communication between the extension host and webview uses typed discriminate
 
 | Package | Used by | Purpose |
 |---------|---------|---------|
-| `@peculiar/x509` | Extension host | RFC 5280–compliant X.509 parsing and certificate generation |
-| `@peculiar/webcrypto` | Extension host | WebCrypto polyfill for Node.js (required by `@peculiar/x509`) |
-| `node-forge` | Extension host | PKCS#12 parsing; provides stronger P12 compatibility |
-| `svelte` | Webview | UI framework |
-| `vite` | Webview | Build tool |
-| `webpack` + `ts-loader` | Extension host | Bundle extension code |
-| `jest` + `ts-jest` | Tests | Unit test runner |
+| `@peculiar/x509` | `@x509-toolkit/core` | RFC 5280–compliant X.509 parsing and generation |
+| `@peculiar/webcrypto` | `@x509-toolkit/core` | WebCrypto polyfill for Node.js |
+| `@peculiar/asn1-*` | `@x509-toolkit/core` | ASN.1 schemas (x509-qualified, x509-qualified-etsi, rsa, ecc, schema) |
+| `node-forge` | `@x509-toolkit/core` | PKCS#12 parsing (stronger P12 compatibility) |
+| `svelte` | `packages/webview-ui` | UI framework |
+| `vite` | `packages/webview-ui` | Build tool |
+| `webpack` + `ts-loader` | `packages/extension` | Bundle extension host code |
+| `jest` + `ts-jest` | `packages/core` | Unit test runner |
 
 ---
 
 ## Build System
 
-```
-npm run build          # Full build: webview then extension
-npm run build:webview  # cd webview-ui && npm run build  →  dist/webview/
-npm run build:ext      # webpack --mode production       →  dist/extension.js
-npm run watch:ext      # webpack --watch (development)
-npm run watch:webview  # vite dev server (development)
-npm test               # jest (unit tests only, no VS Code runtime needed)
-npm run package        # vsce package → .vsix
-```
+Run from the **workspace root**:
 
-Build outputs all land in `dist/`:
-- `dist/extension.js` — bundled extension host
-- `dist/webview/main.js` — bundled webview JS (IIFE)
-- `dist/webview/styles.css` — webview styles
+```
+npm run build           # Full build: core → webview-ui → extension
+npm run build:core      # tsc in packages/core       →  packages/core/dist/
+npm run build:webview   # vite build in packages/webview-ui
+npm run build:ext       # webpack in packages/extension →  packages/extension/dist/extension.js
+npm run watch:ext       # webpack --watch (extension, development)
+npm run watch:webview   # vite dev server (webview, development)
+npm test                # jest in packages/core + jest in packages/extension
+npm run test:core       # jest in packages/core only
+npm run test:ext        # jest in packages/extension only
+npm run test:e2e:ui     # build + run Playwright UI E2E tests
+npm run package         # full build + vsce package → .vsix
+```
 
 ---
 
@@ -120,32 +205,40 @@ Build outputs all land in `dist/`:
 
 | Command ID | Title |
 |-----------|-------|
-| `x509toolkit.showFromSelection` | Show Certificate from Selection (editor context menu) |
-| `x509toolkit.openFile` | Open Certificate File (PEM/DER/PFX dialog) |
-| `x509toolkit.openP12` | Open P12 / PFX File |
+| `x509toolkit.showFromSelection` | Show X.509 from Selection (editor context menu) |
+| `x509toolkit.openFile` | Open X.509 File (PEM/DER/PFX/key/CRL dialog) |
+| `x509toolkit.openFromExplorer` | Open with X.509 Toolkit (Explorer context menu) |
 | `x509toolkit.createSelfSignedP12` | Create Self-Signed P12 (legacy) |
 | `x509toolkit.createCertificate` | Create Certificate (opens `CreateCertPanel`) |
+| `x509toolkit.inspectTlsServer` | Inspect TLS Server Certificate |
+| `x509toolkit.convertFormat` | Convert Certificate Format (opens `ConvertPanel`) |
+| `x509toolkit.generateKey` | Generate Key Pair (opens `KeyGenPanel`) |
 
 ---
 
 ## Testing
 
-Unit tests live in `src/test/` and use **Jest** with `ts-jest`. They test the parsing logic directly without requiring a VS Code extension host. Configuration is in `jest.config.js` and `tsconfig.test.json`.
+Unit tests live in `packages/core/src/test/` and use **Jest** with `ts-jest`. They test parsing logic directly without a VS Code extension host.
 
-Test files mirror their source:
-- `certificateParser.test.ts` — tests `parseCertificate`, `parsePEMChain`
-- `certUtils.test.ts` — tests `bufToHex`, `parseDNString`
-- `derUtils.test.ts` — tests `derTLV`, `derOid`, `derInt`, `derStr`
-- `oidMaps.test.ts` — tests OID lookup maps
-- `p12Parser.test.ts` — tests `parseP12`, `generateCertificate`
-- `qcStatements.test.ts` — tests `parseQcStatements`
+| Test file | What it covers |
+|-----------|---------------|
+| `certificateParser.test.ts` | `parseCertificate`, `parsePEMChain`, `parseCsr` |
+| `certUtils.test.ts` | `bufToHex`, `parseDNString` |
+| `derUtils.test.ts` | `derTLV`, `derOid`, `derInt`, `derStr` |
+| `oidMaps.test.ts` | OID lookup tables |
+| `p12Parser.test.ts` | `parseP12`, `generateCertificate`, `createSelfSignedP12` |
+| `qcStatements.test.ts` | `parseQcStatements` |
+| `caChainUtils.test.ts` | CA chain building utilities |
+
+Webview component tests live in `packages/webview-ui/src/test/` and use **Vitest** + `@testing-library/svelte`.
 
 ---
 
 ## Important Conventions
 
-- **`src/types.ts` and `webview-ui/src/types.ts` must stay in sync.** There is no code-sharing between the two build targets; types are duplicated by design.
-- Hex values throughout the codebase use colon-separated uppercase format (`AA:BB:CC`), produced by `certUtils.bufToHex`.
-- The passphrase dialog is rendered inside the webview (not a native VS Code input box) to avoid the webview losing focus; it uses a `requestId` round-trip.
-- `panelManager.ts` enforces a single viewer panel instance (`currentPanel`); `createCertPanel.ts` enforces a single create-cert panel (`createCertPanelRef`).
-- The webview HTML is generated inline in `panelManager.ts` / `createCertPanel.ts` using a `buildHtml()` helper that injects a CSP nonce and the correct `dist/webview` URIs.
+- **Types are the single source of truth.** `packages/core/src/types/types.ts` defines all data shapes and message protocols. `packages/webview-ui/src/types.ts` re-exports from `@x509-toolkit/core` — no manual mirroring needed.
+- Hex values throughout the codebase use colon-separated **uppercase** format (`AA:BB:CC`), produced by `certUtils.bufToHex`.
+- Passphrase and generic input dialogs are rendered inside the webview (not native VS Code input boxes) to avoid focus loss; they use a `requestId` round-trip via `requestBridgeUtils.ts`.
+- Each panel module enforces a single `WebviewPanel` instance via a module-level reference.
+- The webview HTML is generated by `webviewPanelUtils.buildHtml()` which injects a CSP nonce and the correct `dist/webview` URIs. CSP `script-src` must include both `'nonce-${nonce}'` and `${webview.cspSource}` to allow Vite code-split chunks.
+- When reusing an existing panel, `getOrCreatePanel()` calls `viewerQueue.reset()`; E2E tests must send a `ready` message after a command-triggered panel reset so queued extension→webview messages flush.

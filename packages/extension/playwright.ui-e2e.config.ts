@@ -8,6 +8,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './src/test/ui-e2e',
+  tsconfig: './tsconfig.playwright.json',
   timeout: 180_000,
   expect: {
     timeout: 30_000,

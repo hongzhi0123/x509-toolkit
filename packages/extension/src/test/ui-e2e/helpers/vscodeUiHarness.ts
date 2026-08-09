@@ -87,6 +87,50 @@ export async function stubSaveDialog(
   console.log(`  [dialog] stub result: ${JSON.stringify(result)}`);
 }
 
+export async function stubSaveDialogQueue(
+  app: ElectronApplication,
+  filePaths: string[],
+): Promise<void> {
+  console.log(`  [dialog] stubbing showSaveDialog queue → ${filePaths.join(', ')}`);
+  const result = await app.evaluate((electron, savePaths: string[]) => {
+    let index = 0;
+    electron.dialog.showSaveDialog = async (...args: any[]) => {
+      const filePath = savePaths[Math.min(index, savePaths.length - 1)];
+      index += 1;
+      return { canceled: false, filePath };
+    };
+    electron.dialog.showSaveDialogSync = (...args: any[]) => {
+      const filePath = savePaths[Math.min(index, savePaths.length - 1)];
+      index += 1;
+      return filePath;
+    };
+    return { patched: true, count: savePaths.length };
+  }, filePaths);
+  console.log(`  [dialog] save queue stub result: ${JSON.stringify(result)}`);
+}
+
+export async function stubOpenDialogQueue(
+  app: ElectronApplication,
+  filePaths: string[],
+): Promise<void> {
+  console.log(`  [dialog] stubbing showOpenDialog queue → ${filePaths.join(', ')}`);
+  const result = await app.evaluate((electron, openPaths: string[]) => {
+    let index = 0;
+    electron.dialog.showOpenDialog = async (...args: any[]) => {
+      const filePath = openPaths[Math.min(index, openPaths.length - 1)];
+      index += 1;
+      return { canceled: false, filePaths: [filePath] };
+    };
+    electron.dialog.showOpenDialogSync = (...args: any[]) => {
+      const filePath = openPaths[Math.min(index, openPaths.length - 1)];
+      index += 1;
+      return [filePath];
+    };
+    return { patched: true, count: openPaths.length };
+  }, filePaths);
+  console.log(`  [dialog] open queue stub result: ${JSON.stringify(result)}`);
+}
+
 export async function closeVscodeUiSession(session: VscodeUiSession): Promise<void> {
   if (STEP_DELAY_MS > 0) {
     console.log('  [step] Closing VS Code session...');
