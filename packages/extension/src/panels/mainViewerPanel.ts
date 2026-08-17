@@ -21,6 +21,41 @@ const viewerQueue = createMessageQueue<ExtToWebviewMsg>();
 // The key is NEVER sent to the webview; only a description string is passed.
 let pendingViewerCsrPem: string | undefined;
 let pendingViewerCsrKeyPem: string | undefined;
+let pendingViewerCsrSaved = false;
+let pendingViewerCsrKeySaved = false;
+
+async function offerSaveUnsavedCsrArtifacts(csrPem: string, keyPem: string | undefined): Promise<void> {
+  const choice = await vscode.window.showWarningMessage(
+    keyPem
+      ? 'The generated CSR and private key have not both been saved. Save them before closing?'
+      : 'The generated CSR has not been saved. Save it before closing?',
+    { modal: true },
+    keyPem ? 'Save Both...' : 'Save CSR...',
+    'Discard',
+  );
+  if (choice === 'Discard' || !choice) return;
+
+  const csrUri = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file('request.csr'),
+    filters: { 'Certificate Signing Request': ['csr', 'req', 'pem'], 'All Files': ['*'] },
+    saveLabel: 'Save CSR',
+    title: 'Save Certificate Signing Request',
+  });
+  if (!csrUri) return;
+  fs.writeFileSync(csrUri.fsPath, csrPem, 'utf8');
+
+  if (keyPem) {
+    const keyUri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file('private.key'),
+      filters: { 'Private Key': ['key', 'pem'], 'All Files': ['*'] },
+      saveLabel: 'Save Private Key',
+      title: 'Save Private Key',
+    });
+    if (!keyUri) return;
+    fs.writeFileSync(keyUri.fsPath, keyPem, 'utf8');
+  }
+  vscode.window.showInformationMessage('Generated CSR artifacts saved.');
+}
 
 function createViewerFileActionHost(panel: vscode.WebviewPanel): ViewerFileActionHost {
   return {
@@ -165,10 +200,19 @@ export function getOrCreatePanel(
   );
 
   panel.onDidDispose(() => {
+    const csrPem = pendingViewerCsrPem;
+    const keyPem = pendingViewerCsrKeyPem;
+    const hasUnsavedCsr = Boolean(csrPem && !pendingViewerCsrSaved);
+    const hasUnsavedKey = Boolean(keyPem && !pendingViewerCsrKeySaved);
     currentPanel = undefined;
     viewerQueue.reset();
     pendingViewerCsrPem = undefined;
     pendingViewerCsrKeyPem = undefined;
+    pendingViewerCsrSaved = false;
+    pendingViewerCsrKeySaved = false;
+    if ((hasUnsavedCsr || hasUnsavedKey) && csrPem) {
+      void offerSaveUnsavedCsrArtifacts(csrPem, hasUnsavedKey ? keyPem : undefined);
+    }
   }, null, context.subscriptions);
 
   currentPanel = panel;
@@ -178,6 +222,8 @@ export function getOrCreatePanel(
 export function sendLoading(panel: vscode.WebviewPanel, status?: string): void {
   pendingViewerCsrPem = undefined;
   pendingViewerCsrKeyPem = undefined;
+  pendingViewerCsrSaved = false;
+  pendingViewerCsrKeySaved = false;
   const msg: ExtToWebviewMsg = status ? { type: 'loading', status } : { type: 'loading' };
   viewerQueue.post(panel, msg);
 }
@@ -190,6 +236,8 @@ export function sendCertificates(
 ): void {
   pendingViewerCsrPem = undefined;
   pendingViewerCsrKeyPem = undefined;
+  pendingViewerCsrSaved = false;
+  pendingViewerCsrKeySaved = false;
   const msg: ExtToWebviewMsg = tlsSource
     ? { type: 'certificate', chain, activeIndex, tlsSource }
     : { type: 'certificate', chain, activeIndex };
@@ -199,6 +247,8 @@ export function sendCertificates(
 export function sendCsr(panel: vscode.WebviewPanel, data: CsrData, keyPem?: string): void {
   pendingViewerCsrKeyPem = keyPem;
   pendingViewerCsrPem = data.raw;
+  pendingViewerCsrSaved = false;
+  pendingViewerCsrKeySaved = false;
   let csrData = data;
   if (keyPem) {
     const { algorithm, keySize, namedCurve } = data.publicKey;
@@ -588,7 +638,8 @@ async function handleSavePrivateKey(
   msg: WebviewToExtMsg & { type: 'savePrivateKey' }
 ): Promise<void> {
   void msg;
-  return savePrivateKeyFromMemory(createViewerFileActionHost(panel), pendingViewerCsrKeyPem);
+  const saved = await savePrivateKeyFromMemory(createViewerFileActionHost(panel), pendingViewerCsrKeyPem);
+  if (saved) pendingViewerCsrKeySaved = true;
 }
 
 async function handleSaveCsrFile(
@@ -596,19 +647,24 @@ async function handleSaveCsrFile(
   msg: WebviewToExtMsg & { type: 'saveCsrFile' }
 ): Promise<void> {
   void msg;
-  return saveCsrFromMemory(createViewerFileActionHost(panel), pendingViewerCsrPem);
+  const saved = await saveCsrFromMemory(createViewerFileActionHost(panel), pendingViewerCsrPem);
+  if (saved) pendingViewerCsrSaved = true;
 }
 
 async function handleSaveBothFiles(
   panel: vscode.WebviewPanel,
   msg: WebviewToExtMsg & { type: 'saveBothFiles' }
 ): Promise<void> {
-  return saveCsrAndPrivateKey(
+  const saved = await saveCsrAndPrivateKey(
     createViewerFileActionHost(panel),
     pendingViewerCsrPem,
     pendingViewerCsrKeyPem,
     msg.suggestedName
   );
+  if (saved) {
+    pendingViewerCsrSaved = true;
+    pendingViewerCsrKeySaved = true;
+  }
 }
 
 async function handleOpenConvertHub(

@@ -67,10 +67,10 @@ export async function exportPrivateKey(
 export async function savePrivateKeyFromMemory(
   host: ViewerFileActionHost,
   privateKeyPem: string | undefined
-): Promise<void> {
+): Promise<boolean> {
   if (!privateKeyPem) {
     host.showWarningMessage('No private key in memory. The key is only available immediately after CSR generation.');
-    return;
+    return false;
   }
 
   const keyNameResult = await host.requestInputDialog(
@@ -79,7 +79,7 @@ export async function savePrivateKeyFromMemory(
     { icon: '🗝️', confirmLabel: 'Save…' }
   );
   if (!keyNameResult) {
-    return;
+    return false;
   }
 
   const safeKeyName = sanitizeSaveBaseName(keyNameResult.name, 'private');
@@ -90,20 +90,21 @@ export async function savePrivateKeyFromMemory(
     title: 'Save Private Key',
   });
   if (!keyPath) {
-    return;
+    return false;
   }
 
   host.writeFile(keyPath, privateKeyPem, 'utf8');
   host.showInformationMessage(`Private key saved to ${keyPath}`);
+  return true;
 }
 
 export async function saveCsrFromMemory(
   host: ViewerFileActionHost,
   csrPem: string | undefined
-): Promise<void> {
+): Promise<boolean> {
   if (!csrPem) {
     host.showWarningMessage('No CSR in memory.');
-    return;
+    return false;
   }
 
   const csrNameResult = await host.requestInputDialog(
@@ -112,7 +113,7 @@ export async function saveCsrFromMemory(
     { icon: '📄', confirmLabel: 'Save…' }
   );
   if (!csrNameResult) {
-    return;
+    return false;
   }
 
   const safeCsrName = sanitizeSaveBaseName(csrNameResult.name, 'request');
@@ -123,11 +124,12 @@ export async function saveCsrFromMemory(
     title: 'Save Certificate Signing Request',
   });
   if (!csrPath) {
-    return;
+    return false;
   }
 
   host.writeFile(csrPath, csrPem, 'utf8');
   host.showInformationMessage(`CSR saved to ${csrPath}`);
+  return true;
 }
 
 export async function saveCsrAndPrivateKey(
@@ -135,10 +137,10 @@ export async function saveCsrAndPrivateKey(
   csrPem: string | undefined,
   privateKeyPem: string | undefined,
   suggestedName: string
-): Promise<void> {
+): Promise<boolean> {
   if (!csrPem || !privateKeyPem) {
     host.showWarningMessage('CSR or private key is no longer in memory.');
-    return;
+    return false;
   }
 
   const bothNameResult = await host.requestInputDialog(
@@ -147,7 +149,7 @@ export async function saveCsrAndPrivateKey(
     { icon: '💾', description: 'Both files will be saved with the same base name.', confirmLabel: 'Save…' }
   );
   if (!bothNameResult) {
-    return;
+    return false;
   }
 
   const safeName = sanitizeSaveBaseName(bothNameResult.name, 'certificate');
@@ -158,7 +160,7 @@ export async function saveCsrAndPrivateKey(
     title: 'Save Certificate Signing Request',
   });
   if (!csrPath) {
-    return;
+    return false;
   }
 
   host.writeFile(csrPath, csrPem, 'utf8');
@@ -169,11 +171,12 @@ export async function saveCsrAndPrivateKey(
     title: 'Save Private Key',
   });
   if (!keyPath) {
-    return;
+    return false;
   }
 
   host.writeFile(keyPath, privateKeyPem, 'utf8');
   host.showInformationMessage(`Saved: ${csrPath} and ${keyPath}`);
+  return true;
 }
 
 export function getCertificateExportFilters(format: CertificateExportFormat): { [name: string]: string[] } {

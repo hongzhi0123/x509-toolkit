@@ -200,10 +200,48 @@ export interface CertCreateParams {
   password: string;
 }
 
+/**
+ * Normalized subset of an OpenSSL `.cnf` config file used to pre-fill the
+ * create-certificate form. Properties are present only when the CNF specifies them.
+ * The five keyUsage* booleans are emitted together (all-or-nothing); same for eku*.
+ */
+export interface OpenSslConfig {
+  // Subject DN (from [req_distinguished_name])
+  cn?: string;
+  o?: string;
+  ou?: string;
+  c?: string;
+  st?: string;
+  l?: string;
+  email?: string;
+  // SANs — newline-joined to match the form's textarea values
+  dnsNames?: string;
+  ipAddresses?: string;
+  // Key
+  keyAlgorithm?: KeyAlgorithm;   // derived from [req].default_bits
+  defaultMd?: string;            // informational ([req].default_md), not consumed by generator
+  validityDays?: number;         // [req].default_days
+  // Extensions (see all-or-nothing contract above)
+  isCA?: boolean;                // basicConstraints
+  keyUsageDigitalSignature?: boolean;
+  keyUsageKeyEncipherment?: boolean;
+  keyUsageDataEncipherment?: boolean;
+  keyUsageKeyCertSign?: boolean;
+  keyUsageCRLSign?: boolean;
+  ekuServerAuth?: boolean;
+  ekuClientAuth?: boolean;
+  ekuCodeSigning?: boolean;
+  ekuEmailProtection?: boolean;
+}
+
 export type CreateCertToExtMsg =
   | { type: 'ready' }
   | { type: 'pickCaCert' }
   | { type: 'pickCaKey' }
+  | { type: 'pickCnfFile' }
+  | { type: 'saveCnfFile'; config: OpenSslConfig }
+  | { type: 'saveDefaults'; config: OpenSslConfig }
+  | { type: 'clearForm' }
   | { type: 'generate'; params: CertCreateParams }
   | { type: 'generateCsr'; params: CertCreateParams; keyPassword: string }
   | { type: 'saveCsrFile' }
@@ -215,6 +253,8 @@ export type CreateCertToExtMsg =
 export type ExtToCreateCertMsg =
   | { type: 'caCertLoaded'; subject: string }
   | { type: 'caKeyLoaded'; description: string }
+  | { type: 'cnfLoaded'; config: OpenSslConfig }
+  | { type: 'defaultsLoaded'; config: OpenSslConfig }
   | { type: 'generating' }
   | { type: 'done' }
   | { type: 'csrReady'; csrPem: string }

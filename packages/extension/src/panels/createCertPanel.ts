@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr } from '@x509-toolkit/core';
+import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr, parseOpenSslConfig, serializeOpenSslConfig } from '@x509-toolkit/core';
 import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './mainViewerPanel';
-import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '@x509-toolkit/core';
+import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef, OpenSslConfig } from '@x509-toolkit/core';
 import { requestInputDialog, resolveInputDialogRequest } from '../utils/requestBridgeUtils';
 import { tryLoadPrivateKey } from '../utils/keyImportUtils';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
@@ -68,6 +68,12 @@ export function openCreateCertPanel(
           case 'ready':
             createCertQueue.ready = true;
             createCertQueue.flushPending(panel);
+            {
+              const defaults = vscode.workspace.getConfiguration('x509toolkit').get<OpenSslConfig>('createCertificateDefaults');
+              if (defaults && Object.keys(defaults).length > 0) {
+                createCertQueue.post(panel, { type: 'defaultsLoaded', config: defaults });
+              }
+            }
             break;
 
           case 'inputDialogResponse':
@@ -146,6 +152,64 @@ export function openCreateCertPanel(
             break;
           }
 
+          case 'pickCnfFile': {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              openLabel: 'Load OpenSSL Config',
+              title: 'Select OpenSSL Config File (.cnf / .conf)',
+              filters: {
+                'OpenSSL Config': ['cnf', 'conf', 'cfg', 'ini'],
+                'All Files': ['*'],
+              },
+            });
+            if (!uris?.[0]) break;
+            try {
+              const text = fs.readFileSync(uris[0].fsPath, 'utf8');
+              const config = parseOpenSslConfig(text);
+              if (Object.keys(config).length === 0) {
+                createCertQueue.post(panel, { type: 'error', message: 'No recognized certificate settings found in this file.' });
+              } else {
+                createCertQueue.post(panel, { type: 'cnfLoaded', config });
+              }
+            } catch (e) {
+              createCertQueue.post(panel, { type: 'error', message: `Failed to load config: ${(e as Error).message}` });
+            }
+            break;
+          }
+
+          case 'saveCnfFile': {
+            const uri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file('request.cnf'),
+              filters: { 'OpenSSL Config': ['cnf', 'conf'], 'All Files': ['*'] },
+              saveLabel: 'Save Config',
+              title: 'Save OpenSSL Config',
+            });
+            if (!uri) break;
+            fs.writeFileSync(uri.fsPath, serializeOpenSslConfig(msg.config), 'utf8');
+            vscode.window.showInformationMessage(`OpenSSL config saved to ${uri.fsPath}`);
+            break;
+          }
+
+          case 'saveDefaults': {
+            try {
+              const target = vscode.workspace.workspaceFolders?.length
+                ? vscode.ConfigurationTarget.Workspace
+                : vscode.ConfigurationTarget.Global;
+              await vscode.workspace.getConfiguration('x509toolkit').update('createCertificateDefaults', msg.config, target);
+              vscode.window.showInformationMessage(target === vscode.ConfigurationTarget.Workspace
+                ? 'Certificate form defaults saved for this workspace.'
+                : 'Certificate form defaults saved globally.');
+            } catch (e) {
+              createCertQueue.post(panel, { type: 'error', message: `Failed to save defaults: ${(e as Error).message}` });
+            }
+            break;
+          }
+
+          case 'clearForm':
+            pendingCaCertPem = undefined;
+            pendingCaKeyPem = undefined;
+            break;
+
           case 'generate': {
             const params: CertCreateParams = msg.params;
             createCertQueue.post(panel, { type: 'generating' });
@@ -212,13 +276,13 @@ export function openCreateCertPanel(
               }
               pendingCsrPem = csrPem;
 
-              // Close the create panel and show CSR in viewer at the same column
-              panel.dispose();
               const viewerPanel = getOrCreatePanel(extensionUri, context);
               try {
                 const csrData = await parseCsr(csrPem);
                 sendCsr(viewerPanel, csrData, pendingCsrKeyPem);
               } catch { /* non-fatal: viewer key/CSR still work */ }
+              // Close the create panel and show CSR in viewer at the same column
+              panel.dispose();
             } catch (e) {
               createCertQueue.post(panel, { type: 'error', message: (e as Error).message ?? String(e) });
             }

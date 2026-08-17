@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import InputDialog from '../lib/InputDialog.svelte';
-  import type { CertCreateParams, KeyAlgorithm, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef } from '../types';
+  import type { CertCreateParams, KeyAlgorithm, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef, OpenSslConfig } from '../types';
 
   const vscode = acquireVsCodeApi();
 
@@ -31,7 +31,7 @@
   let ekuCodeSigning     = false;
   let ekuEmailProtection = false;
 
-  let signingMode: 'self-signed' | 'ca-signed' | 'csr' = 'self-signed';
+  let signingMode: 'self-signed' | 'ca-signed' | 'csr' = 'csr';
   let caCertSubject  = '';
   let caKeyDesc      = '';
 
@@ -44,6 +44,7 @@
   let panelState: PanelState = 'idle';
   let errorMsg = '';
   let csrPemReady = '';  // CSR PEM returned by csrReady;
+  let formActionsOpen = false;
 
   let inputDialogRequest: { requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string } | null = null;
 
@@ -78,6 +79,39 @@
     return null;
   }
 
+  // Pre-fill the form from a parsed OpenSSL config. Only fields actually
+  // present in the CNF are touched, so existing user edits are preserved.
+  // signingMode / password / keyPassword are deliberately never changed.
+  function applyCnfConfig(cfg: OpenSslConfig): void {
+    if (cfg.cn !== undefined)    cn = cfg.cn;
+    if (cfg.o !== undefined)     o = cfg.o;
+    if (cfg.ou !== undefined)    ou = cfg.ou;
+    if (cfg.c !== undefined)     c = cfg.c;
+    if (cfg.st !== undefined)    st = cfg.st;
+    if (cfg.l !== undefined)     l = cfg.l;
+    if (cfg.email !== undefined) email = cfg.email;
+    if (cfg.dnsNames !== undefined)    dnsNames = cfg.dnsNames;
+    if (cfg.ipAddresses !== undefined) ipAddresses = cfg.ipAddresses;
+    if (cfg.keyAlgorithm !== undefined) keyAlgorithm = cfg.keyAlgorithm;
+    if (cfg.validityDays !== undefined) validityDays = cfg.validityDays;
+
+    if (cfg.isCA !== undefined) isCA = cfg.isCA;
+
+    if (cfg.keyUsageDigitalSignature !== undefined) {
+      keyUsageDigitalSignature = cfg.keyUsageDigitalSignature;
+      keyUsageKeyEncipherment  = cfg.keyUsageKeyEncipherment!;
+      keyUsageDataEncipherment = cfg.keyUsageDataEncipherment!;
+      keyUsageKeyCertSign      = cfg.keyUsageKeyCertSign!;
+      keyUsageCRLSign          = cfg.keyUsageCRLSign!;
+    }
+    if (cfg.ekuServerAuth !== undefined) {
+      ekuServerAuth      = cfg.ekuServerAuth;
+      ekuClientAuth      = cfg.ekuClientAuth!;
+      ekuCodeSigning     = cfg.ekuCodeSigning!;
+      ekuEmailProtection = cfg.ekuEmailProtection!;
+    }
+  }
+
   // ── message handling ──────────────────────────────────────────────────────
   onMount(() => {
     window.addEventListener('message', (ev: MessageEvent<ExtToCreateCertMsg>) => {
@@ -90,6 +124,13 @@
         case 'caKeyLoaded':
           caKeyDesc = msg.description;
           errorMsg = '';
+          break;
+        case 'cnfLoaded':
+          applyCnfConfig(msg.config);
+          errorMsg = '';
+          break;
+        case 'defaultsLoaded':
+          applyCnfConfig(msg.config);
           break;
         case 'generating':
           panelState = 'generating';
@@ -126,6 +167,32 @@
   // ── actions ───────────────────────────────────────────────────────────────
   function pickCaCert(): void  { vscode.postMessage({ type: 'pickCaCert' }); }
   function pickCaKey(): void   { vscode.postMessage({ type: 'pickCaKey' }); }
+  function closeFormActions(): void { formActionsOpen = false; }
+  function toggleFormActions(): void { formActionsOpen = !formActionsOpen; }
+  function handleFormActionsFocusOut(event: FocusEvent): void {
+    if (!event.currentTarget?.contains(event.relatedTarget as Node | null)) closeFormActions();
+  }
+  function pickCnf(): void     { closeFormActions(); vscode.postMessage({ type: 'pickCnfFile' }); }
+  function formConfig(): OpenSslConfig {
+    return {
+      cn: cn.trim(), o: o.trim(), ou: ou.trim(), c: c.trim(), st: st.trim(), l: l.trim(), email: email.trim(),
+      dnsNames: dnsNames.trim(), ipAddresses: ipAddresses.trim(), keyAlgorithm, validityDays: Math.floor(validityDays), isCA,
+      keyUsageDigitalSignature, keyUsageKeyEncipherment, keyUsageDataEncipherment, keyUsageKeyCertSign, keyUsageCRLSign,
+      ekuServerAuth, ekuClientAuth, ekuCodeSigning, ekuEmailProtection,
+    };
+  }
+  function saveCnf(): void { closeFormActions(); vscode.postMessage({ type: 'saveCnfFile', config: formConfig() }); }
+  function saveDefaults(): void { closeFormActions(); vscode.postMessage({ type: 'saveDefaults', config: formConfig() }); }
+  function clearForm(): void {
+    closeFormActions();
+    cn = ''; o = ''; ou = ''; c = ''; st = ''; l = ''; email = ''; dnsNames = ''; ipAddresses = '';
+    keyAlgorithm = 'RSA-2048'; validityDays = 365; isCA = false;
+    keyUsageDigitalSignature = true; keyUsageKeyEncipherment = true; keyUsageDataEncipherment = false;
+    keyUsageKeyCertSign = false; keyUsageCRLSign = false;
+    ekuServerAuth = true; ekuClientAuth = true; ekuCodeSigning = false; ekuEmailProtection = false;
+    caCertSubject = ''; caKeyDesc = ''; password = ''; passwordConfirm = ''; keyPassword = ''; errorMsg = '';
+    vscode.postMessage({ type: 'clearForm' });
+  }
   function cancel(): void      { vscode.postMessage({ type: 'cancel' }); }
   function saveCsr(): void     { vscode.postMessage({ type: 'saveCsrFile' }); }
   function saveKey(): void     { vscode.postMessage({ type: 'savePrivateKey' }); }
@@ -241,6 +308,28 @@
 
   {:else}
     <!-- ── Certificate creation form ───────────────────────────────── -->
+
+  <div class="cnf-toolbar">
+    <div class="form-actions-menu" on:focusout={handleFormActionsFocusOut}>
+      <button
+        class="btn-secondary form-actions-trigger"
+        data-testid="create-cert-form-actions"
+        aria-haspopup="menu"
+        aria-expanded={formActionsOpen}
+        on:click={toggleFormActions}
+      >
+        Form actions <span aria-hidden="true">▾</span>
+      </button>
+      {#if formActionsOpen}
+      <div class="form-actions-popup">
+        <button role="menuitem" on:click={pickCnf}>Load CNF File...</button>
+        <button role="menuitem" on:click={saveCnf}>Save as CNF File...</button>
+        <button role="menuitem" on:click={saveDefaults}>Save as Default</button>
+        <button role="menuitem" on:click={clearForm}>Clear All Fields</button>
+      </div>
+      {/if}
+    </div>
+  </div>
 
   <!-- ── Subject ─────────────────────────────────────────────────────────── -->
   <section class="section">
@@ -534,7 +623,7 @@
   .field.error input { border-color: var(--vscode-errorForeground, #f48) !important; }
   .field-error { font-size: 0.8em; color: var(--vscode-errorForeground, #f48); }
 
-  input[type="text"], input[type="email"], input[type="number"], input[type="password"],
+  input[type="text"], input[type="email"], input[type="password"],
   select, textarea {
     background: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
@@ -604,6 +693,41 @@
 
   /* ── Buttons */
   .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
+  /* ── CNF loader toolbar */
+  .cnf-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 16px;
+  }
+  .form-actions-menu { position: relative; }
+  .form-actions-trigger { display: inline-flex; align-items: center; gap: 6px; }
+  .form-actions-popup {
+    position: absolute;
+    z-index: 1;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 170px;
+    padding: 4px;
+    border-radius: 3px;
+    background: var(--vscode-menu-background, var(--vscode-editor-background));
+    border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, #555));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  .form-actions-popup button {
+    display: block;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--vscode-menu-foreground, var(--vscode-foreground));
+    text-align: left;
+    font: inherit;
+    font-size: 0.9em;
+    cursor: pointer;
+  }
+  .form-actions-popup button:hover { background: var(--vscode-menu-selectionBackground, #094771); }
 
   .btn-primary, .btn-secondary {
     padding: 7px 16px;
