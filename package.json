@@ -1,168 +1,21 @@
 {
-  "name": "x509-toolkit",
-  "displayName": "X.509 Certificate Toolkit",
-  "description": "View and analyze X.509 certificates. Supports PEM, DER, PFX files.",
-  "version": "0.2.0",
-  "publisher": "hongzhi0123",
-  "icon": "images/icon.png",
-  "license": "MIT",
-  "author": {
-    "name": "Hongzhi Zhang"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hongzhi0123/x509-toolkit.git"
-  },
-  "bugs": {
-    "url": "https://github.com/hongzhi0123/x509-toolkit/issues"
-  },
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Visualization",
-    "Debuggers",
-    "Other"
+  "name": "x509-toolkit-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
   ],
-  "keywords": [
-    "x509",
-    "certificate",
-    "pem",
-    "der",
-    "pfx",
-    "p12",
-    "pkcs12",
-    "ssl",
-    "tls",
-    "pkix"
-  ],
-  "activationEvents": [],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "x509toolkit.showFromSelection",
-        "title": "X.509 Toolkit: Show X.509 from Selection",
-        "icon": "$(shield)"
-      },
-      {
-        "command": "x509toolkit.openFile",
-        "title": "X.509 Toolkit: Open X.509 File",
-        "icon": "$(file-binary)"
-      },
-      {
-        "command": "x509toolkit.createSelfSignedP12",
-        "title": "X.509 Toolkit: Create Self-Signed P12 (legacy)",
-        "icon": "$(key)"
-      },
-      {
-        "command": "x509toolkit.createCertificate",
-        "title": "X.509 Toolkit: Create Certificate",
-        "icon": "$(add)"
-      },
-      {
-        "command": "x509toolkit.openFromExplorer",
-        "title": "Open with X.509 Toolkit",
-        "icon": "$(shield)"
-      },
-      {
-        "command": "x509toolkit.inspectTlsServer",
-        "title": "X.509 Toolkit: Inspect TLS Server Certificate",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "x509toolkit.convertFormat",
-        "title": "X.509 Toolkit: Convert Certificate Format",
-        "icon": "$(arrow-swap)"
-      },
-      {
-        "command": "x509toolkit.openKeyFile",
-        "title": "X.509 Toolkit: Open Key File",
-        "icon": "$(key)"
-      },
-      {
-        "command": "x509toolkit.generateKey",
-        "title": "X.509 Toolkit: Generate Key Pair",
-        "icon": "$(add)"
-      }
-    ],
-    "menus": {
-      "explorer/context": [
-        {
-          "command": "x509toolkit.openFromExplorer",
-          "when": "resourceExtname =~ /^\\.(pem|crt|cer|der|p7b|p7c|p12|pfx|csr|req)$/i",
-          "group": "navigation@100"
-        },
-        {
-          "command": "x509toolkit.openKeyFile",
-          "when": "resourceExtname =~ /^\\.(key|pk8|p8|pub)$/i",
-          "group": "navigation@100"
-        }
-      ],
-      "editor/context": [
-        {
-          "command": "x509toolkit.showFromSelection",
-          "when": "editorTextFocus && editorHasSelection",
-          "group": "1_modification@100"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "x509toolkit.showFromSelection",
-          "when": "editorTextFocus"
-        },
-        {
-          "command": "x509toolkit.openFile"
-        },
-        {
-          "command": "x509toolkit.createCertificate"
-        },
-        {
-          "command": "x509toolkit.inspectTlsServer"
-        },
-        {
-          "command": "x509toolkit.convertFormat"
-        },
-        {
-          "command": "x509toolkit.openKeyFile"
-        },
-        {
-          "command": "x509toolkit.generateKey"
-        }
-      ]
-    }
-  },
   "scripts": {
-    "vscode:prepublish": "npm run build",
-    "build": "npm run build:webview && npm run build:ext",
-    "build:ext": "webpack --mode production",
-    "build:webview": "cd webview-ui && npm install && npm run build",
-    "watch:ext": "webpack --mode development --watch",
-    "watch:webview": "cd webview-ui && npm run dev",
-    "compile": "tsc -p ./",
-    "package": "vsce package --no-dependencies",
-    "test": "jest"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^20.11.0",
-    "@types/node-forge": "^1.3.14",
-    "@types/vscode": "^1.85.0",
-    "jest": "^30.3.0",
-    "ts-jest": "^29.4.9",
-    "ts-loader": "^9.5.1",
-    "typescript": "^5.3.3",
-    "webpack": "^5.90.0",
-    "webpack-cli": "^5.1.4"
-  },
-  "dependencies": {
-    "@peculiar/asn1-ecc": "^2.7.0",
-    "@peculiar/asn1-rsa": "^2.7.0",
-    "@peculiar/asn1-x509-attr": "^2.7.0",
-    "@peculiar/asn1-x509-qualified": "^2.7.0",
-    "@peculiar/asn1-x509-qualified-etsi": "^2.7.0",
-    "@peculiar/webcrypto": "^1.4.5",
-    "@peculiar/x509": "^1.9.7",
-    "node-forge": "^1.4.0"
+    "build": "npm run build -w packages/core && npm run build -w packages/webview-ui && npm run build -w packages/extension",
+    "build:core": "npm run build -w packages/core",
+    "build:webview": "npm run build -w packages/webview-ui",
+    "build:ext": "npm run build -w packages/extension",
+    "watch:ext": "npm run watch -w packages/extension",
+    "watch:webview": "npm run dev -w packages/webview-ui",
+    "test": "npm test -w packages/core && npm test -w packages/extension",
+    "test:core": "npm test -w packages/core",
+    "test:ext": "npm test -w packages/extension",
+    "test:e2e": "npm run test:e2e -w packages/extension",
+    "test:e2e:ui": "npm run build:webview && npm run build:ext && npm run test:e2e:ui -w packages/extension",
+    "package": "npm run build && npm run package -w packages/extension"
   }
 }

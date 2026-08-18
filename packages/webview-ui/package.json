@@ -1,0 +1,26 @@
+{
+  "name": "@x509-toolkit/webview-ui",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.1.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.3.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "@x509-toolkit/core": "*",
+    "jsdom": "^29.1.1",
+    "svelte": "^4.2.12",
+    "typescript": "^5.3.3",
+    "vite": "^5.2.0",
+    "vitest": "^4.1.7"
+  }
+}

@@ -1,0 +1,712 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo, TlsConnectionInfo } from '../types';
+  import CertificateView from '../lib/CertificateView.svelte';
+  import CsrView from '../lib/CsrView.svelte';
+  import PassphraseDialog from '../lib/PassphraseDialog.svelte';
+  import InputDialog from '../lib/InputDialog.svelte';
+  import type { InputDialogFieldDef } from '../types';
+
+  const vscode = acquireVsCodeApi();
+
+  type AppState = 'idle' | 'loading' | 'ready' | 'error' | 'csr';
+
+  let state: AppState = 'idle';
+  let csrData: CsrData | null = null;
+  let chain: CertificateData[] = [];
+  let activeIndex = 0;
+  let errorMessage = '';
+
+  // Downloaded CA Issuer certificates (appended as extra tabs)
+  let downloadedCerts: Array<{ url: string; cert: CertificateData }> = [];
+  let loadingUrls: Set<string> = new Set();
+  let stickyHeaderHeight = 0;
+
+  // Per-cert imported private keys (keyed by cert index in chain)
+  let importedKeys: Map<number, PrivateKeyInfo> = new Map();
+  let importKeyErrors: Map<number, string> = new Map();
+
+  // TLS connection info — set when the panel was opened via Inspect TLS Server
+  let tlsConnectionInfo: TlsConnectionInfo | null = null;
+  let tlsBannerExpanded = false;
+  // Live progress text shown in the loading state
+  let loadingStep = '';
+
+  // Pending passphrase request from the extension host
+  let passphraseRequest: { requestId: string; fileName: string; title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean } | null = null;
+
+  // Pending generic input dialog request from the extension host
+  let inputDialogRequest: { requestId: string; title: string; icon?: string; description?: string; fields: InputDialogFieldDef[]; confirmLabel?: string; cancelLabel?: string } | null = null;
+
+  $: displayChain = [...chain, ...downloadedCerts.map(d => d.cert)];
+  $: activeCert = displayChain[activeIndex] ?? null;
+
+  // Show the "no chain" banner when the topmost cert in the display chain is not self-signed
+  $: topCert = displayChain.length > 0 ? displayChain[displayChain.length - 1] : null;
+  $: showNoChainBanner = state === 'ready' && topCert !== null && !topCert.isSelfSigned;
+  $: bannerAiaUrls = showNoChainBanner
+    ? [...new Set((topCert?.extensions ?? []).flatMap(e => e.caIssuerUrls ?? []))]
+        .filter(url => !downloadedCerts.some(d => d.url === url))
+    : [];
+  $: noChainLabel = (chain.length === 1 && downloadedCerts.length === 0)
+    ? '🔗 No issuer chain loaded'
+    : '🔗 Root CA not loaded';
+
+  onMount(() => {
+    window.addEventListener('message', (event: MessageEvent<ExtToWebviewMsg>) => {
+      const msg = event.data;
+      switch (msg.type) {
+        case 'loading':
+          state = 'loading';
+          chain = [];
+          downloadedCerts = [];
+          loadingUrls = new Set();
+          errorMessage = '';
+          tlsConnectionInfo = null;
+          loadingStep = msg.status ?? '';
+          break;
+        case 'tlsProgress':
+          loadingStep = msg.step;
+          break;
+        case 'certificate':
+          chain = msg.chain;
+          activeIndex = msg.activeIndex;
+          downloadedCerts = [];
+          loadingUrls = new Set();
+          importedKeys = new Map();
+          importKeyErrors = new Map();
+          tlsConnectionInfo = msg.tlsSource ?? null;
+          tlsBannerExpanded = false;
+          loadingStep = '';
+          state = 'ready';
+          break;
+        case 'error':
+          errorMessage = msg.message;
+          state = 'error';
+          break;
+        case 'caIssuerCert': {
+          loadingUrls.delete(msg.url);
+          loadingUrls = loadingUrls;
+          if (!downloadedCerts.some(d => d.url === msg.url)) {
+            downloadedCerts = [...downloadedCerts, { url: msg.url, cert: msg.cert }];
+            // Switch to the newly added tab
+            activeIndex = chain.length + downloadedCerts.length - 1;
+          }
+          break;
+        }
+        case 'caIssuerError': {
+          loadingUrls.delete(msg.url);
+          loadingUrls = loadingUrls;
+          // For file:// errors, the message is already self-explanatory; for AIA URLs keep the URL context
+          errorMessage = msg.url.startsWith('file://')
+            ? msg.message
+            : `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
+          break;
+        }
+        case 'privateKeyImported': {
+          importedKeys.set(msg.certIndex, msg.key);
+          importedKeys = importedKeys;
+          importKeyErrors.delete(msg.certIndex);
+          importKeyErrors = importKeyErrors;
+          break;
+        }
+        case 'privateKeyImportError': {
+          importKeyErrors.set(msg.certIndex, msg.message);
+          importKeyErrors = importKeyErrors;
+          break;
+        }
+        case 'requestPassphrase': {
+          passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName, title: msg.title, description: msg.description, buttonLabel: msg.buttonLabel, requireConfirm: msg.requireConfirm };
+          break;
+        }
+        case 'csr': {
+          csrData = msg.data;
+          state = 'csr';
+          break;
+        }
+        case 'requestInputDialog': {
+          inputDialogRequest = {
+            requestId: msg.requestId,
+            title: msg.title,
+            icon: msg.icon,
+            description: msg.description,
+            fields: msg.fields,
+            confirmLabel: msg.confirmLabel,
+            cancelLabel: msg.cancelLabel,
+          };
+          break;
+        }
+      }
+    });
+
+    vscode.postMessage({ type: 'ready' });
+  });
+
+  function handleCopyRequest(event: CustomEvent<string>): void {
+    vscode.postMessage({ type: 'copyToClipboard', value: event.detail });
+  }
+
+  function handleExportCert(event: CustomEvent<{ pem: string; suggestedName: string; format: 'pem' | 'der' }>): void {
+    vscode.postMessage({ type: 'exportCert', ...event.detail });
+  }
+
+  function handleExportPrivateKey(event: CustomEvent<{ keyPem: string; suggestedName: string }>): void {
+    vscode.postMessage({ type: 'exportPrivateKey', ...event.detail });
+  }
+
+  function handleCreateP12(event: CustomEvent<{ certPems: string[]; suggestedName: string }>): void {
+    vscode.postMessage({ type: 'createP12', ...event.detail });
+  }
+
+  function handleLoadCaIssuer(event: CustomEvent<string>): void {
+    loadCaIssuerUrl(event.detail);
+  }
+
+  function loadCaIssuerUrl(url: string): void {
+    if (loadingUrls.has(url) || downloadedCerts.some(d => d.url === url)) return;
+    loadingUrls.add(url);
+    loadingUrls = loadingUrls;
+    vscode.postMessage({ type: 'downloadCaIssuer', url });
+  }
+
+  function handleOpenCaFile(): void {
+    if (!topCert) return;
+    vscode.postMessage({ type: 'openCaCertFile', topCertPem: topCert.raw });
+  }
+
+  function handleImportPrivateKey(event: CustomEvent<{ certIndex: number; spkiPem: string }>): void {
+    vscode.postMessage({ type: 'importPrivateKey', ...event.detail });
+  }
+
+  function handleOpenConvertHub(): void {
+    vscode.postMessage({ type: 'openConvertHub' });
+  }
+
+  function handlePassphraseSubmit(event: CustomEvent<string>): void {
+    if (!passphraseRequest) return;
+    const { requestId } = passphraseRequest;
+    passphraseRequest = null;
+    vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: event.detail });
+  }
+
+  function handlePassphraseCancel(): void {
+    if (!passphraseRequest) return;
+    const { requestId } = passphraseRequest;
+    passphraseRequest = null;
+    vscode.postMessage({ type: 'passphraseResponse', requestId, passphrase: null });
+  }
+
+  function handleInputDialogConfirm(event: CustomEvent<Record<string, string>>): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: event.detail });
+  }
+
+  function handleInputDialogCancel(): void {
+    if (!inputDialogRequest) return;
+    const { requestId } = inputDialogRequest;
+    inputDialogRequest = null;
+    vscode.postMessage({ type: 'inputDialogResponse', requestId, values: null });
+  }
+
+  function handleSignCsr(): void {
+    if (!csrData) return;
+    vscode.postMessage({ type: 'signCsr', csrPem: csrData.raw });
+  }
+
+  function handleSaveCsr(): void {
+    vscode.postMessage({ type: 'saveCsrFile' });
+  }
+
+  function handleSaveKey(): void {
+    vscode.postMessage({ type: 'savePrivateKey' });
+  }
+
+  function handleSaveBoth(): void {
+    const cn = csrData?.subject.commonName ?? csrData?.subject.raw ?? 'certificate';
+    const suggestedName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    vscode.postMessage({ type: 'saveBothFiles', suggestedName });
+  }
+
+  function selectCert(index: number): void {
+    activeIndex = index;
+    if (index < chain.length) {
+      vscode.postMessage({ type: 'selectCert', index });
+    }
+  }
+</script>
+
+<main data-testid="viewer-root">
+  {#if state === 'idle'}
+    <div class="empty-state" data-testid="viewer-state-idle">
+      <span class="state-icon">🔐</span>
+      <h2>X.509 Certificate Toolkit</h2>
+      <p>
+        Select PEM text in the editor and run
+        <strong>X.509 Toolkit: Show Certificate from Selection</strong>,
+        or use <strong>Open Certificate File</strong> to load a PEM / DER file.
+      </p>
+    </div>
+
+  {:else if state === 'loading'}
+    <div class="empty-state" data-testid="viewer-state-loading">
+      <div class="spinner"></div>
+      <p>{loadingStep || 'Parsing certificate…'}</p>
+    </div>
+
+  {:else if state === 'error'}
+    <div class="error-state" data-testid="viewer-state-error">
+      <div class="state-icon">⚠️</div>
+      <h2>Could not parse certificate</h2>
+      <p class="error-message">{errorMessage}</p>
+    </div>
+
+  {:else if state === 'csr' && csrData}
+    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
+
+  {:else if state === 'ready' && activeCert}
+    <div data-testid="viewer-state-ready">
+    <div class="sticky-header" bind:clientHeight={stickyHeaderHeight}>
+      {#if tlsConnectionInfo}
+        <div class="tls-info-banner" class:expanded={tlsBannerExpanded}>
+          <div class="tls-summary" role="button" tabindex="0"
+               on:click={() => tlsBannerExpanded = !tlsBannerExpanded}
+               on:keydown={(e) => e.key === 'Enter' && (tlsBannerExpanded = !tlsBannerExpanded)}>
+            <span class="tls-chevron">{tlsBannerExpanded ? '▼' : '▶'}</span>
+            <span class="tls-info-icon">🔌</span>
+            <span class="tls-info-text">
+              <strong>{tlsConnectionInfo.host}:{tlsConnectionInfo.port}</strong>
+              {#if tlsConnectionInfo.ip && tlsConnectionInfo.ip !== tlsConnectionInfo.host}
+                <span class="tls-ip">({tlsConnectionInfo.ip})</span>
+              {/if}
+              &nbsp;&middot;&nbsp;<span class="tls-proto">{tlsConnectionInfo.protocol}</span>
+              &nbsp;&middot;&nbsp;<span class="tls-cipher">{tlsConnectionInfo.cipher}</span>
+            </span>
+            <button class="dismiss-btn" on:click|stopPropagation={() => tlsConnectionInfo = null} title="Dismiss">✕</button>
+          </div>
+          {#if tlsBannerExpanded}
+            <ol class="tls-steps">
+              {#each tlsConnectionInfo.steps as step}
+                <li>✓ {step}</li>
+              {/each}
+            </ol>
+          {/if}
+        </div>
+      {/if}
+      {#if displayChain.length > 1}
+        <nav class="chain-nav" aria-label="Certificate chain" data-testid="viewer-chain-nav">
+          {#each displayChain as cert, i}
+            <button
+              class="chain-tab"
+              class:active={i === activeIndex}
+              on:click={() => selectCert(i)}
+              title={cert.subject.raw}
+            >
+              <span class="chain-index">{i + 1}</span>
+              <span class="chain-cn">{cert.subject.commonName ?? cert.subject.raw}</span>
+              {#if i >= chain.length}
+                <span class="badge badge-downloaded">↓ CA</span>
+              {:else if cert.isCA}
+                <span class="badge badge-ca">CA</span>
+              {:else}
+                <span class="badge badge-ee">EE</span>
+              {/if}
+            </button>
+          {/each}
+        </nav>
+      {/if}
+    </div>
+    {#if errorMessage}
+      <div class="ca-issuer-error" data-testid="viewer-ca-error">
+        <span>⚠️ {errorMessage}</span>
+        <button class="dismiss-btn" on:click={() => errorMessage = ''}>✕</button>
+      </div>
+    {/if}
+    {#if showNoChainBanner}
+      <div class="no-chain-banner" data-testid="viewer-no-chain-banner">
+        <span class="no-chain-label">{noChainLabel}</span>
+        <div class="no-chain-actions">
+          <button class="no-chain-btn" on:click={handleOpenCaFile}>
+            📂 Browse for CA certificate…
+          </button>
+          {#each bannerAiaUrls as url}
+            <button
+              class="no-chain-btn no-chain-btn-aia"
+              data-testid="viewer-fetch-aia"
+              disabled={loadingUrls.has(url)}
+              on:click={() => loadCaIssuerUrl(url)}
+              title={url}
+            >
+              {#if loadingUrls.has(url)}
+                ⏳ Loading…
+              {:else}
+                ↓ Fetch from AIA
+              {/if}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    {#key activeCert}
+      <CertificateView
+        cert={activeCert}
+        chainPems={displayChain.map(c => c.raw)}
+        certIndex={activeIndex}
+        importedPrivateKey={importedKeys.get(activeIndex)}
+        importKeyError={importKeyErrors.get(activeIndex)}
+        {loadingUrls}
+        topOffset={stickyHeaderHeight}
+        on:copy={handleCopyRequest}
+        on:export={handleExportCert}
+        on:exportPrivateKey={handleExportPrivateKey}
+        on:createP12={handleCreateP12}
+        on:loadCaIssuer={handleLoadCaIssuer}
+        on:importPrivateKey={handleImportPrivateKey}
+        on:openConvertHub={handleOpenConvertHub}
+      />
+    {/key}
+    </div>
+  {/if}
+</main>
+
+{#if passphraseRequest}
+  <PassphraseDialog
+    fileName={passphraseRequest.fileName}
+    title={passphraseRequest.title ?? 'Encrypted Private Key'}
+    description={passphraseRequest.description}
+    buttonLabel={passphraseRequest.buttonLabel ?? 'Decrypt'}
+    requireConfirm={passphraseRequest.requireConfirm ?? false}
+    on:submit={handlePassphraseSubmit}
+    on:cancel={handlePassphraseCancel}
+  />
+{/if}
+
+{#if inputDialogRequest}
+  <InputDialog
+    title={inputDialogRequest.title}
+    icon={inputDialogRequest.icon ?? ''}
+    description={inputDialogRequest.description ?? ''}
+    fields={inputDialogRequest.fields}
+    confirmLabel={inputDialogRequest.confirmLabel ?? 'OK'}
+    cancelLabel={inputDialogRequest.cancelLabel ?? 'Cancel'}
+    on:confirm={handleInputDialogConfirm}
+    on:cancel={handleInputDialogCancel}
+  />
+{/if}
+
+<style>
+  :global(*) { box-sizing: border-box; }
+
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--vscode-editor-foreground, #cdd6f4);
+    background-color: var(--vscode-editor-background, #1e1e2e);
+    line-height: 1.5;
+  }
+
+  :global(::-webkit-scrollbar) { width: 6px; height: 6px; }
+  :global(::-webkit-scrollbar-track) { background: transparent; }
+  :global(::-webkit-scrollbar-thumb) {
+    background: var(--vscode-scrollbarSlider-background, rgba(255,255,255,0.2));
+    border-radius: 3px;
+  }
+
+  main { min-height: 100vh; }
+
+  /* ─── Idle / Loading / Error states ─── */
+  .empty-state,
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 2rem;
+    text-align: center;
+    gap: 0.75rem;
+  }
+
+  .empty-state h2,
+  .error-state h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+  }
+
+  .empty-state p,
+  .error-state p {
+    max-width: 420px;
+    margin: 0;
+    color: var(--vscode-descriptionForeground, #888);
+    font-size: 0.88rem;
+  }
+
+  .state-icon { font-size: 3rem; line-height: 1; }
+
+  .error-message {
+    color: var(--vscode-errorForeground, #f38ba8) !important;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.8rem !important;
+    word-break: break-all;
+    background: rgba(243,139,168,0.08);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    border: 1px solid rgba(243,139,168,0.25);
+  }
+
+  /* ─── Spinner ─── */
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+    border-top-color: var(--vscode-button-background, #7c3aed);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Chain tabs ─── */
+  /* ─── Sticky header wrapper (TLS banner + chain tabs) ─── */
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .chain-nav {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0.4rem 1rem 0;
+    background: var(--vscode-sideBar-background, #181825);
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+    gap: 2px;
+  }
+
+  .chain-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.8rem;
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: 5px 5px 0 0;
+    color: var(--vscode-tab-inactiveForeground, #888);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-family: var(--vscode-font-family);
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+    max-width: 180px;
+  }
+
+  .chain-tab:hover {
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.05));
+  }
+
+  .chain-tab.active {
+    color: var(--vscode-editor-foreground);
+    font-weight: 600;
+    background: var(--vscode-editor-background, #1e1e2e);
+    border-color: var(--vscode-button-background, #7c3aed);
+    border-bottom-color: var(--vscode-editor-background, #1e1e2e);
+  }
+
+  .chain-tab.active .chain-index {
+    background: var(--vscode-button-background, #7c3aed);
+    color: var(--vscode-button-foreground, #fff);
+  }
+
+  .chain-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--vscode-badge-background, rgba(255,255,255,0.1));
+    color: var(--vscode-badge-foreground, #cdd6f4);
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .chain-cn {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+  }
+
+  .badge-ca {
+    background: rgba(148,130,209,0.2);
+    color: #b4a7d6;
+    border: 1px solid rgba(148,130,209,0.4);
+  }
+
+  .badge-ee {
+    background: rgba(137,220,235,0.12);
+    color: #89dceb;
+    border: 1px solid rgba(137,220,235,0.3);
+  }
+
+  .badge-downloaded {
+    background: rgba(166,227,161,0.15);
+    color: #a6e3a1;
+    border: 1px solid rgba(166,227,161,0.35);
+  }
+
+  /* ─── CA Issuer error banner ─── */
+  .ca-issuer-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem;
+    background: rgba(243,139,168,0.08);
+    border-bottom: 1px solid rgba(243,139,168,0.25);
+    color: var(--vscode-errorForeground, #f38ba8);
+    font-size: 0.8rem;
+  }
+
+  .dismiss-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font-size: 0.9rem;
+    padding: 0 0.25rem;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .dismiss-btn:hover { opacity: 1; }
+
+  /* ─── TLS connection info banner ─── */
+  .tls-info-banner {
+    background: var(--vscode-sideBar-background, #181825);
+    border-bottom: 1px solid rgba(166,227,161,0.35);
+    font-size: 0.8rem;
+  }
+
+  .tls-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    flex-wrap: wrap;
+  }
+  .tls-summary:hover { background: rgba(255,255,255,0.04); }
+
+  .tls-chevron {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    flex-shrink: 0;
+    width: 0.7rem;
+  }
+
+  .tls-info-icon { flex-shrink: 0; }
+
+  .tls-info-text {
+    flex: 1;
+    color: var(--vscode-descriptionForeground, #aaa);
+    min-width: 0;
+  }
+
+  .tls-info-text strong {
+    color: var(--vscode-foreground, #cdd6f4);
+  }
+
+  .tls-ip {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .tls-proto {
+    color: var(--vscode-terminal-ansiGreen, #a6e3a1);
+    font-weight: 600;
+  }
+
+  .tls-cipher {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+
+  .tls-steps {
+    margin: 0;
+    padding: 0.3rem 1rem 0.5rem 2.8rem;
+    list-style: none;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .tls-steps li {
+    padding: 0.15rem 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.75rem;
+    color: var(--vscode-terminal-ansiGreen, #a6e3a1);
+    opacity: 0.85;
+  }
+
+  /* ─── No-chain banner ─── */
+  .no-chain-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.45rem 1rem;
+    background: rgba(137,180,250,0.07);
+    border-bottom: 1px solid rgba(137,180,250,0.2);
+    font-size: 0.8rem;
+  }
+
+  .no-chain-label {
+    color: var(--vscode-descriptionForeground, #888);
+    flex-shrink: 0;
+  }
+
+  .no-chain-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .no-chain-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    color: var(--vscode-button-secondaryForeground, #cdd6f4);
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: var(--vscode-font-family);
+  }
+
+  .no-chain-btn:hover:not(:disabled) {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+  }
+
+  .no-chain-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+</style>

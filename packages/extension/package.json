@@ -1,0 +1,162 @@
+{
+  "name": "x509-toolkit",
+  "displayName": "X.509 Certificate Toolkit",
+  "description": "View and analyze X.509 certificates. Supports PEM, DER, PFX files.",
+  "version": "0.5.0",
+  "publisher": "hongzhi0123",
+  "icon": "images/icon.png",
+  "license": "MIT",
+  "author": {
+    "name": "Hongzhi Zhang"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hongzhi0123/x509-toolkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hongzhi0123/x509-toolkit/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "x509",
+    "certificate",
+    "pem",
+    "der",
+    "pfx",
+    "p12",
+    "pkcs12",
+    "ssl",
+    "tls",
+    "pkix"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "X.509 Toolkit",
+      "properties": {
+        "x509toolkit.createCertificateDefaults": {
+          "type": "object",
+          "default": {},
+          "description": "Saved defaults for the Create Certificate form. Passwords and CA private keys are never stored."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "x509toolkit.showFromSelection",
+        "title": "X.509 Toolkit: Show X.509 from Selection",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "x509toolkit.openFile",
+        "title": "X.509 Toolkit: Open X.509 File",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "x509toolkit.createSelfSignedP12",
+        "title": "X.509 Toolkit: Create Self-Signed P12 (legacy)",
+        "icon": "$(key)"
+      },
+      {
+        "command": "x509toolkit.createCertificate",
+        "title": "X.509 Toolkit: Create Certificate",
+        "icon": "$(add)"
+      },
+      {
+        "command": "x509toolkit.openFromExplorer",
+        "title": "Open with X.509 Toolkit",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "x509toolkit.inspectTlsServer",
+        "title": "X.509 Toolkit: Inspect TLS Server Certificate",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "x509toolkit.convertFormat",
+        "title": "X.509 Toolkit: Convert Certificate Format",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "x509toolkit.generateKey",
+        "title": "X.509 Toolkit: Generate Key Pair",
+        "icon": "$(add)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "x509toolkit.openFromExplorer",
+          "when": "resourceExtname =~ /^\\.(pem|crt|cer|der|p7b|p7c|p12|pfx|csr|req|key|pk8|p8|pub|crl)$/i",
+          "group": "navigation@100"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "x509toolkit.showFromSelection",
+          "when": "editorTextFocus && editorHasSelection",
+          "group": "1_modification@100"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "x509toolkit.showFromSelection",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "x509toolkit.openFile"
+        },
+        {
+          "command": "x509toolkit.createCertificate"
+        },
+        {
+          "command": "x509toolkit.inspectTlsServer"
+        },
+        {
+          "command": "x509toolkit.convertFormat"
+        },
+        {
+          "command": "x509toolkit.generateKey"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "package": "vsce package --no-dependencies",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node ./out/test/test/runTest.js",
+    "pretest:e2e": "tsc -p tsconfig.test.json",
+    "test:e2e": "node ./out/test/test/runE2E.js",
+    "test:e2e:ui": "playwright test -c ./playwright.ui-e2e.config.ts",
+    "generate-test-fixtures": "node ./scripts/generate-test-fixtures.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/sinon": "^21.0.1",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
+    "dotenv": "^16.4.7",
+    "mocha": "^11.7.6",
+    "sinon": "^22.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@x509-toolkit/core": "*"
+  }
+}

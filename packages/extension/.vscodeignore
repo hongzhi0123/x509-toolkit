@@ -1,0 +1,16 @@
+.vscode/**
+.vscode-test/**
+src/**
+out/**
+node_modules/**
+tsconfig.json
+webpack.config.js
+
+node_modules/**
+.gitignore
+webpack.config.js
+tsconfig.json
+
+test-fixtures/**
+test-results/**
+dist/extension/src/test/**

@@ -1,0 +1,27 @@
+{
+  "git.enabled": false,
+  "gitlens.enabled": false,
+  "x509toolkit.createCertificateDefaults": {
+    "cn": "example.com",
+    "o": "Example Corp",
+    "ou": "IT Department",
+    "c": "US",
+    "st": "California",
+    "l": "San Francisco",
+    "email": "admin@example.com",
+    "dnsNames": "example.com\nwww.example.com\napi.example.com",
+    "ipAddresses": "192.168.1.1",
+    "keyAlgorithm": "RSA-4096",
+    "validityDays": 365,
+    "isCA": false,
+    "keyUsageDigitalSignature": true,
+    "keyUsageKeyEncipherment": true,
+    "keyUsageDataEncipherment": false,
+    "keyUsageKeyCertSign": false,
+    "keyUsageCRLSign": false,
+    "ekuServerAuth": true,
+    "ekuClientAuth": true,
+    "ekuCodeSigning": false,
+    "ekuEmailProtection": false
+  }
+}
