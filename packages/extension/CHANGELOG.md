@@ -4,6 +4,19 @@ All notable changes to this project will be documented here.
 
 ---
 
+## [0.5.0] - 2026-08-18
+
+### Added
+
+- Open certificate file via context menu
+- Browse and open CAs
+- Inspect TLS Server
+- Conversion Hub
+- CRL Viewer
+- Load/Save CNF file for creating CSR
+- Save content of CNF as default
+
+
 ## [0.2.0] - 2026-05-07
 
 ### Added

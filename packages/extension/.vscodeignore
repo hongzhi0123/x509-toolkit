@@ -10,3 +10,7 @@ node_modules/**
 .gitignore
 webpack.config.js
 tsconfig.json
+
+test-fixtures/**
+test-results/**
+dist/extension/src/test/**
