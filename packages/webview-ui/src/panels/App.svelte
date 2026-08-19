@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, PrivateKeyInfo, TlsConnectionInfo } from '../types';
   import CertificateView from '../lib/CertificateView.svelte';
   import CsrView from '../lib/CsrView.svelte';
@@ -52,95 +52,102 @@
     ? '🔗 No issuer chain loaded'
     : '🔗 Root CA not loaded';
 
-  onMount(() => {
-    window.addEventListener('message', (event: MessageEvent<ExtToWebviewMsg>) => {
-      const msg = event.data;
-      switch (msg.type) {
-        case 'loading':
-          state = 'loading';
-          chain = [];
-          downloadedCerts = [];
-          loadingUrls = new Set();
-          errorMessage = '';
-          tlsConnectionInfo = null;
-          loadingStep = msg.status ?? '';
-          break;
-        case 'tlsProgress':
-          loadingStep = msg.step;
-          break;
-        case 'certificate':
-          chain = msg.chain;
-          activeIndex = msg.activeIndex;
-          downloadedCerts = [];
-          loadingUrls = new Set();
-          importedKeys = new Map();
-          importKeyErrors = new Map();
-          tlsConnectionInfo = msg.tlsSource ?? null;
-          tlsBannerExpanded = false;
-          loadingStep = '';
-          state = 'ready';
-          break;
-        case 'error':
-          errorMessage = msg.message;
-          state = 'error';
-          break;
-        case 'caIssuerCert': {
-          loadingUrls.delete(msg.url);
-          loadingUrls = loadingUrls;
-          if (!downloadedCerts.some(d => d.url === msg.url)) {
-            downloadedCerts = [...downloadedCerts, { url: msg.url, cert: msg.cert }];
-            // Switch to the newly added tab
-            activeIndex = chain.length + downloadedCerts.length - 1;
-          }
-          break;
+  function handleMessage(event: MessageEvent<ExtToWebviewMsg>): void {
+    const msg = event.data;
+    switch (msg.type) {
+      case 'loading':
+        state = 'loading';
+        chain = [];
+        downloadedCerts = [];
+        loadingUrls = new Set();
+        errorMessage = '';
+        tlsConnectionInfo = null;
+        loadingStep = msg.status ?? '';
+        break;
+      case 'tlsProgress':
+        loadingStep = msg.step;
+        break;
+      case 'certificate':
+        chain = msg.chain;
+        activeIndex = msg.activeIndex;
+        downloadedCerts = [];
+        loadingUrls = new Set();
+        importedKeys = new Map();
+        importKeyErrors = new Map();
+        tlsConnectionInfo = msg.tlsSource ?? null;
+        tlsBannerExpanded = false;
+        loadingStep = '';
+        state = 'ready';
+        break;
+      case 'error':
+        errorMessage = msg.message;
+        state = 'error';
+        break;
+      case 'caIssuerCert': {
+        loadingUrls.delete(msg.url);
+        loadingUrls = loadingUrls;
+        if (!downloadedCerts.some(d => d.url === msg.url)) {
+          downloadedCerts = [...downloadedCerts, { url: msg.url, cert: msg.cert }];
+          // Switch to the newly added tab
+          activeIndex = chain.length + downloadedCerts.length - 1;
         }
-        case 'caIssuerError': {
-          loadingUrls.delete(msg.url);
-          loadingUrls = loadingUrls;
-          // For file:// errors, the message is already self-explanatory; for AIA URLs keep the URL context
-          errorMessage = msg.url.startsWith('file://')
-            ? msg.message
-            : `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
-          break;
-        }
-        case 'privateKeyImported': {
-          importedKeys.set(msg.certIndex, msg.key);
-          importedKeys = importedKeys;
-          importKeyErrors.delete(msg.certIndex);
-          importKeyErrors = importKeyErrors;
-          break;
-        }
-        case 'privateKeyImportError': {
-          importKeyErrors.set(msg.certIndex, msg.message);
-          importKeyErrors = importKeyErrors;
-          break;
-        }
-        case 'requestPassphrase': {
-          passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName, title: msg.title, description: msg.description, buttonLabel: msg.buttonLabel, requireConfirm: msg.requireConfirm };
-          break;
-        }
-        case 'csr': {
-          csrData = msg.data;
-          state = 'csr';
-          break;
-        }
-        case 'requestInputDialog': {
-          inputDialogRequest = {
-            requestId: msg.requestId,
-            title: msg.title,
-            icon: msg.icon,
-            description: msg.description,
-            fields: msg.fields,
-            confirmLabel: msg.confirmLabel,
-            cancelLabel: msg.cancelLabel,
-          };
-          break;
-        }
+        break;
       }
-    });
+      case 'caIssuerError': {
+        loadingUrls.delete(msg.url);
+        loadingUrls = loadingUrls;
+        // For file:// errors, the message is already self-explanatory; for AIA URLs keep the URL context
+        errorMessage = msg.url.startsWith('file://')
+          ? msg.message
+          : `Failed to load CA Issuer from ${msg.url}: ${msg.message}`;
+        break;
+      }
+      case 'privateKeyImported': {
+        importedKeys.set(msg.certIndex, msg.key);
+        importedKeys = importedKeys;
+        importKeyErrors.delete(msg.certIndex);
+        importKeyErrors = importKeyErrors;
+        break;
+      }
+      case 'privateKeyImportError': {
+        importKeyErrors.set(msg.certIndex, msg.message);
+        importKeyErrors = importKeyErrors;
+        break;
+      }
+      case 'requestPassphrase': {
+        passphraseRequest = { requestId: msg.requestId, fileName: msg.fileName, title: msg.title, description: msg.description, buttonLabel: msg.buttonLabel, requireConfirm: msg.requireConfirm };
+        break;
+      }
+      case 'csr': {
+        csrData = msg.data;
+        state = 'csr';
+        break;
+      }
+      case 'requestInputDialog': {
+        inputDialogRequest = {
+          requestId: msg.requestId,
+          title: msg.title,
+          icon: msg.icon,
+          description: msg.description,
+          fields: msg.fields,
+          confirmLabel: msg.confirmLabel,
+          cancelLabel: msg.cancelLabel,
+        };
+        break;
+      }
+    }
+  }
 
-    vscode.postMessage({ type: 'ready' });
+  const handleWindowMessage = (event: MessageEvent<ExtToWebviewMsg>): void => {
+    handleMessage(event);
+  };
+
+  window.addEventListener('message', handleWindowMessage);
+  onDestroy(() => {
+    window.removeEventListener('message', handleWindowMessage);
   });
+
+  vscode.postMessage({ type: 'ready' });
 
   function handleCopyRequest(event: CustomEvent<string>): void {
     vscode.postMessage({ type: 'copyToClipboard', value: event.detail });
