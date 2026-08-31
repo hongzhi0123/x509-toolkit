@@ -1,0 +1,60 @@
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 2px 8px;
+  background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.06));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.12));
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+  transition: background 0.13s ease;
+  white-space: nowrap;
+}
+
+.copy-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+}
+
+.copy-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 1px;
+}
+
+.copy-btn.raw-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+}
+
+.copy-btn.import-key-btn {
+  background: rgba(137, 220, 235, 0.1);
+  border-color: rgba(137, 220, 235, 0.3);
+  color: #89dceb;
+}
+
+.copy-btn.import-key-btn:hover {
+  background: rgba(137, 220, 235, 0.18);
+}
+
+.copy-btn-inline {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 4px;
+  font-size: 0.72rem;
+  background: none;
+  border: 1px solid var(--vscode-panel-border, #555);
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.1s;
+}
+
+.copy-btn-inline:hover {
+  opacity: 1;
+}

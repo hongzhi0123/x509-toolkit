@@ -1,3 +1,5 @@
+import './styles/shared.css';
+
 const appEl = document.getElementById('app')!;
 const view  = (appEl as HTMLElement).dataset.view;
 

@@ -52,4 +52,5 @@
     font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
     font-size: 0.76rem;
   }
+
 </style>

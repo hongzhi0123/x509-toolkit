@@ -381,21 +381,6 @@
   .reason-unspecified { color: var(--vscode-descriptionForeground); }
   .invalidity-date { font-size: 0.72rem; color: var(--vscode-descriptionForeground); margin-top: 2px; }
 
-  .copy-btn-inline {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 4px;
-    font-size: 0.72rem;
-    background: none;
-    border: 1px solid var(--vscode-panel-border, #555);
-    border-radius: 3px;
-    color: var(--vscode-descriptionForeground);
-    cursor: pointer;
-    opacity: 0.5;
-    transition: opacity 0.1s;
-  }
-  .copy-btn-inline:hover { opacity: 1; }
-
   /* ── Pagination ── */
   .pagination {
     display: flex;

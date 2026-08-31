@@ -232,7 +232,7 @@
     <SectionCard title="Public Key (SPKI PEM)" icon="🔓" collapsed>
       <div class="pem-wrap">
         <div class="pem-toolbar">
-          <button class="copy-btn" on:click={() => copy(keyData.spkiPem)}>⧉ Copy</button>
+          <button class="copy-btn" on:click={() => copy(keyData.spkiPem)}>⧉ Copy PEM</button>
         </div>
         <pre class="pem-block">{keyData.spkiPem}</pre>
       </div>
@@ -243,7 +243,7 @@
       <SectionCard title="Private Key (PKCS#8 PEM)" icon="🔐" variant="key" collapsed>
         <div class="pem-wrap">
           <div class="pem-toolbar">
-            <button class="copy-btn" on:click={() => copy(keyData.pkcs8Pem)}>⧉ Copy</button>
+            <button class="copy-btn" on:click={() => copy(keyData.pkcs8Pem)}>⧉ Copy PEM</button>
           </div>
           <pre class="pem-block">{keyData.pkcs8Pem}</pre>
         </div>
@@ -374,20 +374,6 @@
     overflow-y: auto;
   }
 
-  .copy-btn {
-    background: none;
-    border: 1px solid var(--vscode-button-secondaryBackground, rgba(255,255,255,0.12));
-    color: var(--vscode-button-secondaryForeground, inherit);
-    border-radius: 4px;
-    padding: 0.18rem 0.5rem;
-    cursor: pointer;
-    font-size: 0.72rem;
-  }
-
-  .copy-btn:hover {
-    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.08));
-  }
-
   .export-row {
     display: flex;
     align-items: center;
@@ -441,4 +427,5 @@
   .action-btn:hover {
     background: var(--vscode-button-hoverBackground, #106ebe);
   }
+
 </style>
