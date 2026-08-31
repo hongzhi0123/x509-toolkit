@@ -14,6 +14,28 @@
   let generatedKey: StandaloneKeyData | null = null;
   let errorMessage = '';
 
+  // Optional test hooks for deterministic panel-state initialization.
+  export let initialGeneratedKey: StandaloneKeyData | null = null;
+  export let initialInputDialog: {
+    requestId: string;
+    title: string;
+    icon?: string;
+    description?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    fields: Array<{
+      id: string;
+      label: string;
+      type?: 'text' | 'password' | 'number' | 'date' | 'select';
+      placeholder?: string;
+      hint?: string;
+      required?: boolean;
+      options?: Array<{ value: string; label: string }>;
+    }>;
+  } | null = null;
+  let keySeeded = false;
+  let dialogSeeded = false;
+
   // Input dialog (used for save-with-passphrase)
   let inputDialog: {
     requestId: string;
@@ -48,6 +70,17 @@
       ? `${generatedKey.algorithm} (${generatedKey.namedCurve})`
       : generatedKey.algorithm
     : '';
+
+  $: if (!keySeeded && initialGeneratedKey) {
+    generatedKey = initialGeneratedKey;
+    state = 'done';
+    keySeeded = true;
+  }
+
+  $: if (!dialogSeeded && initialInputDialog) {
+    inputDialog = { ...initialInputDialog };
+    dialogSeeded = true;
+  }
 
   onMount(() => {
     window.addEventListener('message', (event: MessageEvent<ExtToKeyGenMsg>) => {
