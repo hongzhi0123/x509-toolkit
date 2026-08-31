@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**X.509 Certificate Toolkit** is a VS Code extension (publisher: `hongzhi0123`) that parses and displays X.509 certificates, CRLs, and private/public keys from PEM, DER, PKCS#12/PFX/P12, and key files. It also supports creating self-signed and CA-signed certificates, generating key pairs, inspecting live TLS server certificates, and converting between certificate formats. The extension is packaged as a `.vsix` and targets VS Code ≥ 1.85.
+**X.509 Certificate Toolkit** is a VS Code extension (publisher: `hongzhi0123`) that parses and displays X.509 certificates, CRLs, and private/public keys from PEM, DER, PKCS#12/PFX/P12, and key files. It supports creating self-signed and CA-signed certificates, generating CSRs, signing CSRs with a local CA, generating key pairs, inspecting live TLS server certificates, and converting formats through a dedicated conversion hub. It also supports importing/exporting OpenSSL request config files for certificate form prefill and persisting non-secret certificate form defaults in VS Code settings. The extension is packaged as a `.vsix` and targets VS Code ≥ 1.85.
 
 ---
 
@@ -57,6 +57,7 @@ packages/
 | `certificateParser.ts` | `parseCertificate()`, `parsePEMChain()`, `parseCsr()` — uses `@peculiar/x509` + `@peculiar/webcrypto` |
 | `crlParser.ts` | `parseCrl()` — parses PEM/DER Certificate Revocation Lists into `CrlData` |
 | `keyParser.ts` | `parseKeyFile()`, `isEncryptedKey()`, `generateKeyPair()` — key loading and generation using Node.js `crypto` |
+| `opensslConfigParser.ts` | `parseOpenSslConfig()`, `serializeOpenSslConfig()` — import/export OpenSSL CNF settings used by the create-certificate panel |
 | `p12Parser.ts` | `parseP12()`, `createSelfSignedP12()`, `generateCertificate()`, `generateCsr()`, `createP12Buffer()` — PKCS#12 via `node-forge` + `@peculiar/x509` |
 | `qcStatements.ts` | `QcStatementsExtension` class — parses OID 1.3.6.1.5.5.7.1.3 (ETSI EN 319 412-5 and PSD2) |
 
@@ -87,11 +88,11 @@ Registers all VS Code commands via `context.subscriptions`.
 | File | Responsibility |
 |------|---------------|
 | `mainViewerPanel.ts` | Main certificate/CSR viewer `WebviewPanel`; handles chain display, passphrase bridge, CA issuer download, private key import, and message routing |
-| `createCertPanel.ts` | Certificate/CSR generation panel; handles CA cert/key file pickers and calls `generateCertificate` / `generateCsr` |
+| `createCertPanel.ts` | Certificate/CSR generation panel; handles CA cert/key pickers, OpenSSL CNF import/export, defaults persistence, and calls `generateCertificate` / `generateCsr` |
 | `crlPanel.ts` | CRL viewer `WebviewPanel` |
-| `keyPanel.ts` | Standalone key viewer `WebviewPanel`; handles passphrase bridge for encrypted keys |
-| `keyGenPanel.ts` | Key generation panel; handles save dialogs and input dialogs |
-| `convertPanel.ts` | Format Conversion Hub panel; handles file picking and conversion operations |
+| `keyPanel.ts` | Standalone key viewer `WebviewPanel`; handles passphrase bridge for encrypted keys and private/public key export formats |
+| `keyGenPanel.ts` | Key generation panel; handles key generation, save dialogs, and open-in-key-viewer flow |
+| `convertPanel.ts` | Format Conversion Hub panel; handles extract/build PKCS#12, PEM↔DER conversion (cert/key), and chain bundling |
 
 ### `utils/`
 | File | Responsibility |
@@ -145,8 +146,8 @@ All panel communication uses typed discriminated unions defined in `packages/cor
 - Webview → Ext: `ready`, `copyToClipboard`, `selectCert`, `downloadCaIssuer`, `exportCert`, `exportPrivateKey`, `createP12`, `importPrivateKey`, `openCaCertFile`, `signCsr`, `saveCsrFile`, `savePrivateKey`, `saveBothFiles`, `passphraseResponse`, `inputDialogResponse`, `openConvertHub`
 
 **Create Cert Panel** (`CreateCertToExtMsg` / `ExtToCreateCertMsg`):
-- Webview → Ext: `ready`, `pickCaCert`, `pickCaKey`, `generate`, `generateCsr`, `saveCsrFile`, `savePrivateKey`, `cancel`, `inputDialogResponse`
-- Ext → Webview: `caCertLoaded`, `caKeyLoaded`, `generating`, `done`, `csrReady`, `error`, `requestInputDialog`
+- Webview → Ext: `ready`, `pickCaCert`, `pickCaKey`, `pickCnfFile`, `saveCnfFile`, `saveDefaults`, `clearForm`, `generate`, `generateCsr`, `saveCsrFile`, `savePrivateKey`, `cancel`, `inputDialogResponse`
+- Ext → Webview: `caCertLoaded`, `caKeyLoaded`, `cnfLoaded`, `defaultsLoaded`, `generating`, `done`, `csrReady`, `error`, `requestInputDialog`
 
 **CRL Viewer** (`CrlViewerToExtMsg` / `ExtToCrlViewerMsg`):
 - Webview → Ext: `crlViewerReady`, `copyToClipboard`
@@ -192,9 +193,10 @@ npm run build:webview   # vite build in packages/webview-ui
 npm run build:ext       # webpack in packages/extension →  packages/extension/dist/extension.js
 npm run watch:ext       # webpack --watch (extension, development)
 npm run watch:webview   # vite dev server (webview, development)
-npm test                # jest in packages/core + jest in packages/extension
+npm test                # all suites: core (jest) + webview-ui (vitest) + extension (mocha/vscode)
 npm run test:core       # jest in packages/core only
-npm run test:ext        # jest in packages/extension only
+npm run test:ext        # extension host suite in packages/extension (mocha/vscode)
+npm run test:e2e        # extension workflow e2e (mocha)
 npm run test:e2e:ui     # build + run Playwright UI E2E tests
 npm run package         # full build + vsce package → .vsix
 ```
@@ -208,7 +210,6 @@ npm run package         # full build + vsce package → .vsix
 | `x509toolkit.showFromSelection` | Show X.509 from Selection (editor context menu) |
 | `x509toolkit.openFile` | Open X.509 File (PEM/DER/PFX/key/CRL dialog) |
 | `x509toolkit.openFromExplorer` | Open with X.509 Toolkit (Explorer context menu) |
-| `x509toolkit.createSelfSignedP12` | Create Self-Signed P12 (legacy) |
 | `x509toolkit.createCertificate` | Create Certificate (opens `CreateCertPanel`) |
 | `x509toolkit.inspectTlsServer` | Inspect TLS Server Certificate |
 | `x509toolkit.convertFormat` | Convert Certificate Format (opens `ConvertPanel`) |
@@ -218,19 +219,47 @@ npm run package         # full build + vsce package → .vsix
 
 ## Testing
 
-Unit tests live in `packages/core/src/test/` and use **Jest** with `ts-jest`. They test parsing logic directly without a VS Code extension host.
+Testing is split by runtime and harness:
 
-| Test file | What it covers |
-|-----------|---------------|
-| `certificateParser.test.ts` | `parseCertificate`, `parsePEMChain`, `parseCsr` |
-| `certUtils.test.ts` | `bufToHex`, `parseDNString` |
-| `derUtils.test.ts` | `derTLV`, `derOid`, `derInt`, `derStr` |
-| `oidMaps.test.ts` | OID lookup tables |
-| `p12Parser.test.ts` | `parseP12`, `generateCertificate`, `createSelfSignedP12` |
-| `qcStatements.test.ts` | `parseQcStatements` |
-| `caChainUtils.test.ts` | CA chain building utilities |
+- **Core (`packages/core`)**: Jest + ts-jest
+  - `caChainUtils.test.ts`
+  - `certificateParser.test.ts`
+  - `certUtils.test.ts`
+  - `crlParser.test.ts`
+  - `derUtils.test.ts`
+  - `keyParser.test.ts`
+  - `oidMaps.test.ts`
+  - `opensslConfigParser.test.ts`
+  - `p12Advanced.test.ts`
+  - `p12Parser.test.ts`
+  - `qcStatements.test.ts`
 
-Webview component tests live in `packages/webview-ui/src/test/` and use **Vitest** + `@testing-library/svelte`.
+- **Webview UI (`packages/webview-ui`)**: Vitest + jsdom + `@testing-library/svelte`
+  - `components.test.ts`
+  - `panels/App.test.ts`
+  - `panels/CreateCertPanel.test.ts`
+  - `panels/ConvertHub.test.ts`
+  - `panels/KeyPanels.test.ts`
+
+- **Extension host unit/integration (`packages/extension/src/test/suite`)**: Mocha via `@vscode/test-electron`
+  - `requestBridgeUtils.test.ts`
+  - `messageRouterUtils.test.ts`
+  - `mainViewerPanel.test.ts`
+  - `fileActionsUtils.test.ts`
+  - `keyImportUtils.test.ts`
+  - `openFileCommands.test.ts`
+  - `inspectTlsServerCommand.test.ts`
+
+- **Extension workflow E2E (`packages/extension/src/test/suite/e2e`)**: Mocha
+  - `openFileWorkflow.e2e.test.ts`
+
+- **UI E2E (`packages/extension/src/test/ui-e2e`)**: Playwright + Electron
+  - `createCert/createAndOpenP12.ui.e2e.spec.ts`
+  - `createCert/createCsr.ui.e2e.spec.ts`
+  - `createCert/createCaChain.ui.e2e.spec.ts`
+  - `convert/convertFormat.ui.e2e.spec.ts`
+  - `viewer/openP12Passphrase.ui.e2e.spec.ts`
+  - `viewer/passphraseErrorHandling.ui.e2e.spec.ts`
 
 ---
 
