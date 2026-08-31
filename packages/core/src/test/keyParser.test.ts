@@ -183,6 +183,11 @@ describe('parseKeyFile — error handling', () => {
     const certPem = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----';
     expect(() => parseKeyFile(Buffer.from(certPem))).toThrow();
   });
+
+  it('throws for malformed DER public key input', () => {
+    const malformedDer = Buffer.from('3006020101020101', 'hex');
+    expect(() => parseKeyFile(malformedDer)).toThrow(/not a recognised private or public key format/i);
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -276,4 +281,14 @@ describe('generateKeyPair', () => {
     expect(data.algorithm).toBe('EC');
     expect(data.namedCurve).toBe('P-256');
   }, 10_000);
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// generateKeyPair — error handling
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('generateKeyPair — error handling', () => {
+  it('rejects unsupported algorithms', async () => {
+    await expect(generateKeyPair('RSA-1024' as never)).rejects.toThrow(/unsupported key algorithm/i);
+  });
 });
