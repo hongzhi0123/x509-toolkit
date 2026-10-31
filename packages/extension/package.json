@@ -2,7 +2,7 @@
   "name": "x509-toolkit",
   "displayName": "X.509 Certificate Toolkit",
   "description": "View and analyze X.509 certificates. Supports PEM, DER, PFX files.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "hongzhi0123",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -36,7 +36,9 @@
     "tls",
     "pkix"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
@@ -46,9 +48,76 @@
           "type": "object",
           "default": {},
           "description": "Saved defaults for the Create Certificate form. Passwords and CA private keys are never stored."
+        },
+        "x509toolkit.useCustomEditor.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open supported certificate, CSR, key, and CRL files directly in X.509 custom editors."
         }
       }
     },
+    "customEditors": [
+      {
+        "viewType": "x509toolkit.certCsrViewerEditor",
+        "displayName": "X.509 Certificate / CSR Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.pem"
+          },
+          {
+            "filenamePattern": "*.crt"
+          },
+          {
+            "filenamePattern": "*.cer"
+          },
+          {
+            "filenamePattern": "*.der"
+          },
+          {
+            "filenamePattern": "*.p12"
+          },
+          {
+            "filenamePattern": "*.pfx"
+          },
+          {
+            "filenamePattern": "*.csr"
+          },
+          {
+            "filenamePattern": "*.req"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "x509toolkit.keyViewerEditor",
+        "displayName": "X.509 Key Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.key"
+          },
+          {
+            "filenamePattern": "*.pk8"
+          },
+          {
+            "filenamePattern": "*.p8"
+          },
+          {
+            "filenamePattern": "*.pub"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "x509toolkit.crlViewerEditor",
+        "displayName": "X.509 CRL Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.crl"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "x509toolkit.showFromSelection",

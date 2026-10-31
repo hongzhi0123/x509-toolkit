@@ -136,6 +136,8 @@ suite('openFile and openFromExplorer commands', () => {
   let csrPath: string;
   let derCertPath: string;
   let keyPath: string;
+  let certStoredAsKeyPath: string;
+  let keyStoredAsPemPath: string;
   let unsupportedPath: string;
   let createdPanels: FakePanel[];
   let createWebviewPanelStub: sinon.SinonStub;
@@ -148,6 +150,8 @@ suite('openFile and openFromExplorer commands', () => {
     const [certificate] = await parseP12(p12Buffer, 'test-password');
     derCertPath = path.join(tmpDir, 'leaf.der');
     fs.writeFileSync(derCertPath, pemCertificateToDer(certificate.raw));
+    certStoredAsKeyPath = path.join(tmpDir, 'cert-stored-as-key.key');
+    fs.writeFileSync(certStoredAsKeyPath, certificate.raw, 'utf8');
 
     const csr = await generateCsr(makeParams({ cn: 'command-route-csr' }));
     csrPath = path.join(tmpDir, 'request.csr');
@@ -156,6 +160,8 @@ suite('openFile and openFromExplorer commands', () => {
     const keyPair = await generateKeyPair('RSA-2048');
     keyPath = path.join(tmpDir, 'private.key');
     fs.writeFileSync(keyPath, keyPair.privateKeyPem, 'utf8');
+    keyStoredAsPemPath = path.join(tmpDir, 'key-stored-as-pem.pem');
+    fs.writeFileSync(keyStoredAsPemPath, keyPair.privateKeyPem, 'utf8');
 
     const caKeys = await webcrypto.subtle.generateKey(
       { name: 'ECDSA', namedCurve: 'P-256' },
@@ -261,6 +267,31 @@ suite('openFile and openFromExplorer commands', () => {
     await panel.fireMessage({ type: 'keyViewerReady' });
 
     assert.ok(findPostedMessage<ExtToKeyViewerMsg & { type: 'keyLoading' }>(panel, 'keyLoading'));
+    const msg = findPostedMessage<ExtToKeyViewerMsg & { type: 'keyData'; key: { algorithm: string } }>(panel, 'keyData');
+    assert.ok(msg);
+    assert.strictEqual(msg?.key.algorithm, 'RSA');
+  });
+
+  test('openFromExplorer routes certificate PEM marker even when extension is .key', async () => {
+    await openFromExplorer(mockContext())(vscode.Uri.file(certStoredAsKeyPath));
+
+    assert.strictEqual(createWebviewPanelStub.firstCall.args[0], 'x509toolkit');
+    const panel = createdPanels[0];
+    await panel.fireMessage({ type: 'ready' });
+
+    const msg = findPostedMessage<ExtToWebviewMsg & { type: 'certificate'; chain: Array<{ sourceFormat?: string; subject: { commonName?: string } }> }>(panel, 'certificate');
+    assert.ok(msg);
+    assert.strictEqual(msg?.chain[0].sourceFormat, 'pem');
+    assert.strictEqual(msg?.chain[0].subject.commonName, 'command-route-cert');
+  });
+
+  test('openFromExplorer routes private key PEM marker even when extension is .pem', async () => {
+    await openFromExplorer(mockContext())(vscode.Uri.file(keyStoredAsPemPath));
+
+    assert.strictEqual(createWebviewPanelStub.firstCall.args[0], 'x509KeyViewer');
+    const panel = createdPanels[0];
+    await panel.fireMessage({ type: 'keyViewerReady' });
+
     const msg = findPostedMessage<ExtToKeyViewerMsg & { type: 'keyData'; key: { algorithm: string } }>(panel, 'keyData');
     assert.ok(msg);
     assert.strictEqual(msg?.key.algorithm, 'RSA');
