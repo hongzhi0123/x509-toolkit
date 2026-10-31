@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain } from '@x509-toolkit/core';
+import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain } from '@x509-toolkit/core';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
@@ -262,16 +262,18 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
 
     const raw = fs.readFileSync(document.uri.fsPath);
     const asText = raw.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    const normalizedText = containsPemBlock(asText) ? canonicalizePemBlocks(asText) : asText;
+    const normalizedRaw = normalizedText === asText ? raw : Buffer.from(normalizedText, 'utf8');
     const ext = document.uri.fsPath.toLowerCase().split('.').pop() ?? '';
     const fileName = path.basename(document.uri.fsPath);
 
-    if (isPemCrlText(asText)) {
+    if (isPemCrlText(normalizedText)) {
       await openWithViewPreservingPreview(document.uri, CRL_EDITOR_VIEW_TYPE, EDITOR_VIEW_TYPE);
       await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, CRL_EDITOR_VIEW_TYPE);
       return;
     }
 
-    if (looksLikeKeyFile(raw)) {
+    if (looksLikeKeyFile(normalizedRaw)) {
       await openWithViewPreservingPreview(document.uri, KEY_EDITOR_VIEW_TYPE, EDITOR_VIEW_TYPE);
       await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, KEY_EDITOR_VIEW_TYPE);
       return;
@@ -366,8 +368,8 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
         queue,
         webviewPanel,
         fileName,
-        raw,
-        asText,
+        normalizedRaw,
+        normalizedText,
         ext,
         requestPassphraseSafely,
         renderedState,

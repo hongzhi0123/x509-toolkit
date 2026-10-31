@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseCertificate, parsePEMChain, parseCsr, parseP12, looksLikeKeyFile } from '@x509-toolkit/core';
+import { canonicalizePemBlocks, containsPemBlock, parseCertificate, parsePEMChain, parseCsr, parseP12, looksLikeKeyFile } from '@x509-toolkit/core';
 import {
   getOrCreatePanel,
   sendLoading,
@@ -38,22 +38,23 @@ export async function sendParsedPemText(
 ): Promise<void> {
   let panel: vscode.WebviewPanel | undefined;
   try {
-    const buf = Buffer.from(text);
+    const normalizedText = containsPemBlock(text) ? canonicalizePemBlocks(text) : text;
+    const buf = Buffer.from(normalizedText);
     if (looksLikeKeyFile(buf)) {
       await openKeyFromBuffer(context, buf, 'private key');
       return;
     }
-    if (isPemCrlText(text)) {
+    if (isPemCrlText(normalizedText)) {
       await openCrlFromBuffer(context, buf, 'selected-text.pem', 'pem');
       return;
     }
 
     panel = getMainViewerPanel(context);
-    if (isCsrText(text)) {
-      const csrData = await parseCsr(text);
+    if (isCsrText(normalizedText)) {
+      const csrData = await parseCsr(normalizedText);
       sendCsr(panel, csrData);
     } else {
-      const chain = await parsePEMChain(text);
+      const chain = await parsePEMChain(normalizedText);
       chain.forEach(c => { c.sourceFormat = 'pem'; });
       sendCertificates(panel, chain, 0);
     }
@@ -81,30 +82,32 @@ export async function sendParsedFile(
   try {
     const lowerExt = ext.toLowerCase();
     const asText = raw.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    const normalizedText = containsPemBlock(asText) ? canonicalizePemBlocks(asText) : asText;
+    const normalizedRaw = normalizedText === asText ? raw : Buffer.from(normalizedText, 'utf8');
 
     // Prefer explicit PEM markers over file extension when they disagree.
-    if (isPemCrlText(asText)) {
-      await openCrlFromBuffer(context, raw, fileName, 'pem');
+    if (isPemCrlText(normalizedText)) {
+      await openCrlFromBuffer(context, normalizedRaw, fileName, 'pem');
       return;
     }
 
-    if (isCsrText(asText)) {
+    if (isCsrText(normalizedText)) {
       panel = getMainViewerPanel(context);
-      const csrData = await parseCsr(raw);
+      const csrData = await parseCsr(normalizedRaw);
       sendCsr(panel, csrData);
       return;
     }
 
-    if (asText.includes('-----BEGIN CERTIFICATE-----')) {
+    if (normalizedText.includes('-----BEGIN CERTIFICATE-----')) {
       panel = getMainViewerPanel(context);
-      const chain = await parsePEMChain(asText);
+      const chain = await parsePEMChain(normalizedText);
       chain.forEach(c => { c.sourceFormat = 'pem'; });
       sendCertificates(panel, chain, 0);
       return;
     }
 
-    if (looksLikeKeyFile(raw) || lowerExt === 'key' || lowerExt === 'pk8' || lowerExt === 'p8') {
-      await openKeyFromBuffer(context, raw, fileName);
+    if (looksLikeKeyFile(normalizedRaw) || lowerExt === 'key' || lowerExt === 'pk8' || lowerExt === 'p8') {
+      await openKeyFromBuffer(context, normalizedRaw, fileName);
       return;
     }
 
