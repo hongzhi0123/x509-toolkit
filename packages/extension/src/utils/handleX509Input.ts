@@ -82,12 +82,33 @@ export async function sendParsedFile(
     const lowerExt = ext.toLowerCase();
     const asText = raw.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
 
+    // Prefer explicit PEM markers over file extension when they disagree.
+    if (isPemCrlText(asText)) {
+      await openCrlFromBuffer(context, raw, fileName, 'pem');
+      return;
+    }
+
+    if (isCsrText(asText)) {
+      panel = getMainViewerPanel(context);
+      const csrData = await parseCsr(raw);
+      sendCsr(panel, csrData);
+      return;
+    }
+
+    if (asText.includes('-----BEGIN CERTIFICATE-----')) {
+      panel = getMainViewerPanel(context);
+      const chain = await parsePEMChain(asText);
+      chain.forEach(c => { c.sourceFormat = 'pem'; });
+      sendCertificates(panel, chain, 0);
+      return;
+    }
+
     if (looksLikeKeyFile(raw) || lowerExt === 'key' || lowerExt === 'pk8' || lowerExt === 'p8') {
       await openKeyFromBuffer(context, raw, fileName);
       return;
     }
 
-    if (lowerExt === 'crl' || isPemCrlText(asText)) {
+    if (lowerExt === 'crl') {
       await openCrlFromBuffer(context, raw, fileName, lowerExt);
       return;
     }
@@ -109,21 +130,15 @@ export async function sendParsedFile(
       return;
     }
 
-    if (isCsrText(asText) || lowerExt === 'csr' || lowerExt === 'req') {
+    if (lowerExt === 'csr' || lowerExt === 'req') {
       const csrData = await parseCsr(raw);
       sendCsr(panel, csrData);
       return;
     }
 
-    if (asText.includes('-----BEGIN CERTIFICATE-----')) {
-      const chain = await parsePEMChain(asText);
-      chain.forEach(c => { c.sourceFormat = 'pem'; });
-      sendCertificates(panel, chain, 0);
-    } else {
-      const cert = await parseCertificate(raw);
-      cert.sourceFormat = 'der';
-      sendCertificates(panel, [cert], 0);
-    }
+    const cert = await parseCertificate(raw);
+    cert.sourceFormat = 'der';
+    sendCertificates(panel, [cert], 0);
   } catch (err: unknown) {
     if (panel) {
       sendError(panel, (err as Error).message ?? String(err));

@@ -15,6 +15,7 @@ let selfSignedPem: string;
 let expiredPem: string;
 let leafPem: string;
 let caPem: string;
+let sanPem: string;
 
 beforeAll(async () => {
   // Self-signed EC P-256 certificate — valid until 2035
@@ -84,6 +85,26 @@ beforeAll(async () => {
     ],
   });
   leafPem = leafCert.toString('pem');
+
+  // Certificate with non-DNS SANs and a critical SAN extension
+  const sanKeys = await webcrypto.subtle.generateKey(EC_ALG, false, ['sign', 'verify']);
+  const sanCert = await x509.X509CertificateGenerator.createSelfSigned({
+    serialNumber: '12',
+    name: 'CN=SAN Test, O=Test Org, C=US',
+    notBefore: new Date('2024-01-01T00:00:00Z'),
+    notAfter: new Date('2035-01-01T00:00:00Z'),
+    keys: sanKeys,
+    signingAlgorithm: EC_ALG,
+    extensions: [
+      new x509.BasicConstraintsExtension(false, undefined, true),
+      new x509.SubjectAlternativeNameExtension([
+        new x509.GeneralName('url', 'https://service.example.test/api'),
+        new x509.GeneralName('email', 'admin@example.test'),
+        new x509.GeneralName('ip', '192.0.2.10'),
+      ], true),
+    ],
+  });
+  sanPem = sanCert.toString('pem');
 }, 30_000);
 
 // ---------------------------------------------------------------------------
@@ -213,6 +234,17 @@ describe('parseCertificate — raw output and extensions', () => {
     expect(cert.raw).toContain('-----END CERTIFICATE-----');
   });
 
+  it('parses SANs beyond DNS and preserves critical extension flags', async () => {
+    const cert = await parseCertificate(sanPem);
+
+    const sanExt = cert.extensions.find(e => e.oid === '2.5.29.17');
+    expect(sanExt).toBeDefined();
+    expect(sanExt?.critical).toBe(true);
+    expect(sanExt?.value).toContain('URL: https://service.example.test/api');
+    expect(sanExt?.value).toContain('EMAIL: admin@example.test');
+    expect(sanExt?.value).toContain('IP: 192.0.2.10');
+  });
+
   it('parses Key Usage extension from the leaf certificate', async () => {
     const cert = await parseCertificate(leafPem);
     const kuExt = cert.extensions.find(e => e.oid === '2.5.29.15');
@@ -277,6 +309,27 @@ describe('parsePEMChain', () => {
   it('parses a two-certificate PEM chain in order', async () => {
     const combined = leafPem + '\n' + caPem;
     const chain = await parsePEMChain(combined);
+    expect(chain).toHaveLength(2);
+    expect(chain[0].subject.commonName).toBe('Test Leaf');
+    expect(chain[1].subject.commonName).toBe('Test CA');
+  });
+
+  it('parses a PEM chain with interleaved non-certificate PEM blocks and extra whitespace/comments', async () => {
+    const mixedInput = [
+      '   # leading comment',
+      '',
+      leafPem,
+      '',
+      '-----BEGIN PRIVATE KEY-----',
+      'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC...',
+      '-----END PRIVATE KEY-----',
+      '',
+      '# another comment',
+      caPem,
+      '   ',
+    ].join('\n');
+
+    const chain = await parsePEMChain(mixedInput);
     expect(chain).toHaveLength(2);
     expect(chain[0].subject.commonName).toBe('Test Leaf');
     expect(chain[1].subject.commonName).toBe('Test CA');

@@ -5,6 +5,7 @@ import FieldRow from '../lib/FieldRow.svelte';
 import HexValue from '../lib/HexValue.svelte';
 import SectionCard from '../lib/SectionCard.svelte';
 import Fingerprints from '../lib/Fingerprints.svelte';
+import InputDialog from '../lib/InputDialog.svelte';
 import type { Validity, Fingerprints as FP } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -233,5 +234,81 @@ describe('Fingerprints', () => {
     await fireEvent.click(getAllByTitle('Copy SHA-256')[0]);
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0].detail).toBe(fps.sha256);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// InputDialog
+// ---------------------------------------------------------------------------
+describe('InputDialog', () => {
+  const baseFields = [
+    { id: 'name', label: 'Name', required: true, value: '' },
+    { id: 'days', label: 'Days', type: 'number' as const, value: '365' },
+  ];
+
+  it('renders as an open modal dialog with title and description', () => {
+    const { getByRole, getByText } = render(InputDialog, {
+      props: {
+        title: 'Create Output File',
+        description: 'Provide values to continue.',
+        fields: baseFields,
+      },
+    });
+
+    expect(getByRole('dialog')).toBeInTheDocument();
+    expect(getByText('Create Output File')).toBeInTheDocument();
+    expect(getByText('Provide values to continue.')).toBeInTheDocument();
+  });
+
+  it('dispatches confirm with values on submit', async () => {
+    const { getByLabelText, getByText, component } = render(InputDialog, {
+      props: {
+        title: 'Create Output File',
+        fields: baseFields,
+        confirmLabel: 'Save',
+      },
+    });
+
+    const handler = vi.fn();
+    component.$on('confirm', handler);
+
+    await fireEvent.input(getByLabelText('Name *'), { target: { value: 'bundle.p12' } });
+    await fireEvent.click(getByText('Save'));
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler.mock.calls[0][0].detail).toEqual({ name: 'bundle.p12', days: '365' });
+  });
+
+  it('dispatches cancel when cancel button is clicked', async () => {
+    const { getByText, component } = render(InputDialog, {
+      props: {
+        title: 'Create Output File',
+        fields: baseFields,
+        cancelLabel: 'Abort',
+      },
+    });
+
+    const handler = vi.fn();
+    component.$on('cancel', handler);
+
+    await fireEvent.click(getByText('Abort'));
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it('shows required field error after submit attempt and blocks confirmation', async () => {
+    const { getByText, component, findByText } = render(InputDialog, {
+      props: {
+        title: 'Create Output File',
+        fields: baseFields,
+      },
+    });
+
+    const handler = vi.fn();
+    component.$on('confirm', handler);
+
+    await fireEvent.click(getByText('OK'));
+
+    expect(await findByText('Name is required.')).toBeInTheDocument();
+    expect(handler).not.toHaveBeenCalled();
   });
 });

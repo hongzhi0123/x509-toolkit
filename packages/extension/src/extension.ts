@@ -6,6 +6,8 @@ import { openFromExplorer } from './commands/openFromExplorer';
 import { inspectTlsServer } from './commands/inspectTlsServer';
 import { convertFormat } from './commands/convertFormat';
 import { openKeyGenPanel } from './panels/keyGenPanel';
+import { registerCertCsrCustomEditors, syncCustomEditorAssociations } from './customEditors/certCsrCustomEditor';
+import { registerKeyCrlCustomEditors } from './customEditors/keyCrlCustomEditor';
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -16,6 +18,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('x509toolkit.inspectTlsServer', inspectTlsServer(context)),
     vscode.commands.registerCommand('x509toolkit.convertFormat', convertFormat(context)),
     vscode.commands.registerCommand('x509toolkit.generateKey', openKeyGenPanel(context))
+  );
+
+  context.subscriptions.push(...registerCertCsrCustomEditors(context));
+  context.subscriptions.push(...registerKeyCrlCustomEditors(context));
+
+  void syncCustomEditorAssociations();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('x509toolkit.useCustomEditor.enabled')) {
+        void syncCustomEditorAssociations();
+      }
+    })
   );
 }
 

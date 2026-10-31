@@ -6,6 +6,14 @@ A VS Code extension for viewing, analyzing, and creating X.509 certificates with
 
 ## Features
 
+### Custom Editors (Default)
+
+Supported certificate, CSR, key, CRL, and P12/PFX files now open directly in X.509 Toolkit custom editors by default.
+
+- **Enabled by default**: `x509toolkit.useCustomEditor.enabled = true`
+- **Disable custom editors**: set `x509toolkit.useCustomEditor.enabled` to `false` in User or Workspace settings
+- When disabled, files fall back to the legacy command-based open flow
+
 ### Viewing Certificates
 
 Open certificates in several ways:
@@ -106,9 +114,12 @@ The signed certificate and private key are saved as a PKCS#12 file, which is the
 
 | Command | Description |
 |---|---|
-| `X.509 Toolkit: Show Certificate from Selection` | Parse PEM from the active editor's selected text |
-| `X.509 Toolkit: Open Certificate File` | Open a PEM, DER, P7B, P12, or PFX file from disk |
+| `X.509 Toolkit: Show X.509 from Selection` | Parse PEM from the active editor's selected text |
+| `X.509 Toolkit: Open X.509 File` | Open a PEM, DER, P7B, P12, PFX, CSR, key, or CRL file from disk |
 | `X.509 Toolkit: Create Certificate` | Open the certificate generation form |
+| `X.509 Toolkit: Inspect TLS Server Certificate` | Inspect and display a live TLS server certificate chain |
+| `X.509 Toolkit: Convert Certificate Format` | Open the conversion hub |
+| `X.509 Toolkit: Generate Key Pair` | Open key generation panel |
 
 The **Show Certificate from Selection** command is also available in the editor **right-click context menu** whenever text is selected.
 
@@ -121,6 +132,8 @@ The **Show Certificate from Selection** command is also available in the editor 
 | PKCS#7 | `.p7b`, `.p7c` | Certificate bundle |
 | PKCS#12 / PFX | `.p12`, `.pfx` | Keystore; supports password-protected files |
 | PKCS#10 CSR | `.csr`, `.req` | Certificate Signing Request (PEM or DER) |
+| Private/Public key | `.key`, `.pk8`, `.p8`, `.pub` | Key viewer, key details, export support |
+| CRL | `.crl` | Certificate revocation list viewer |
 | Editor selection | — | PEM text selected in any open file |
 
 ## Tech Stack

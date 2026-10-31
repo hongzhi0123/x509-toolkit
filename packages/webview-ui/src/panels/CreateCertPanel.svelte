@@ -213,7 +213,9 @@
   }
 
   function copyCsr(): void {
-    navigator.clipboard.writeText(csrPemReady).catch(() => {});
+    const clipboard = globalThis.navigator?.clipboard;
+    if (!clipboard) return;
+    clipboard.writeText(csrPemReady).catch(() => {});
   }
 
   function generate(): void {

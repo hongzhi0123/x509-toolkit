@@ -663,13 +663,6 @@
   /* ── Raw PEM ── */
   .raw-pem-wrap { position: relative; }
 
-  .raw-copy-btn {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 1;
-  }
-
   .raw-pem {
     margin: 0;
     padding: 0.7rem;
@@ -697,15 +690,6 @@
     color: #fab387;
     background: rgba(250, 179, 135, 0.1);
     border: 1px solid rgba(250, 179, 135, 0.3);
-  }
-
-  .import-key-btn {
-    background: rgba(137, 220, 235, 0.1);
-    border-color: rgba(137, 220, 235, 0.3);
-    color: #89dceb;
-  }
-  .import-key-btn:hover {
-    background: rgba(137, 220, 235, 0.18);
   }
 
   .hex-dump {
@@ -748,24 +732,4 @@
     flex-shrink: 0;
   }
 
-  /* ── Global copy-button style ── */
-  :global(.copy-btn) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.2rem;
-    padding: 2px 8px;
-    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.06));
-    color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
-    border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.1));
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-family: var(--vscode-font-family);
-    cursor: pointer;
-    transition: background 0.13s;
-    white-space: nowrap;
-  }
-
-  :global(.copy-btn:hover) {
-    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.11));
-  }
 </style>

@@ -206,6 +206,9 @@ export function generateKeyPair(algorithm: KeyAlgorithm): Promise<{
       case 'EC-P521':
         crypto.generateKeyPair('ec', { namedCurve: 'P-521' }, finish);
         break;
+      default:
+        reject(new Error(`Unsupported key algorithm: ${algorithm}`));
+        break;
     }
   });
 }
