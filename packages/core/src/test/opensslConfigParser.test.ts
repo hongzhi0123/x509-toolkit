@@ -1,4 +1,5 @@
-import { parseOpenSslConfig, serializeOpenSslConfig } from '../parsers/opensslConfigParser';
+import { mapX509ToOpenSslConfig, parseOpenSslConfig, serializeOpenSslConfig } from '../parsers/opensslConfigParser';
+import type { CertificateData, CsrData } from '../types/types';
 
 const SAMPLE_CNF = `# Sample request config
 [ req ]
@@ -250,5 +251,94 @@ IP.1 = 10.0.0.1
     expect(parseOpenSslConfig('[ req ]\ndefault_days = -5\n').validityDays).toBeUndefined();
     expect(parseOpenSslConfig('[ req ]\ndefault_days = abc\n').validityDays).toBeUndefined();
     expect(parseOpenSslConfig('[ req ]\ndefault_days = 90\n').validityDays).toBe(90);
+  });
+});
+
+describe('mapX509ToOpenSslConfig', () => {
+  it('maps certificate fields into renewal-ready form config', () => {
+    const cert: CertificateData = {
+      version: 3,
+      serialNumber: '01:02',
+      subject: {
+        raw: 'CN=example.com,O=Example Org,OU=Ops,C=US,ST=WA,L=Seattle,emailAddress=ops@example.com',
+        commonName: 'example.com',
+        organization: 'Example Org',
+        organizationalUnit: 'Ops',
+        country: 'US',
+        state: 'WA',
+        locality: 'Seattle',
+        email: 'ops@example.com',
+      },
+      issuer: { raw: 'CN=Issuer' },
+      validity: {
+        notBefore: '2026-01-01T00:00:00.000Z',
+        notAfter: '2027-01-01T00:00:00.000Z',
+        isExpired: false,
+        daysRemaining: 100,
+      },
+      publicKey: {
+        algorithm: 'RSA',
+        keySize: 4096,
+        spki: 'AA:BB',
+        spkiPem: '-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----\n',
+      },
+      signature: { algorithm: 'sha256WithRSAEncryption', value: 'AA:BB' },
+      extensions: [
+        { oid: '2.5.29.17', name: 'Subject Alternative Name', critical: false, value: 'DNS: example.com\nDNS: www.example.com\nIP: 10.0.0.1', raw: '00' },
+        { oid: '2.5.29.15', name: 'Key Usage', critical: true, value: 'Digital Signature, Key Encipherment, Data Encipherment', raw: '00' },
+        { oid: '2.5.29.37', name: 'Extended Key Usage', critical: false, value: 'serverAuth\nclientAuth', raw: '00' },
+      ],
+      fingerprints: { sha1: 'AA', sha256: 'BB' },
+      raw: '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n',
+      isCA: false,
+      isSelfSigned: false,
+    };
+
+    const cfg = mapX509ToOpenSslConfig(cert);
+
+    expect(cfg.cn).toBe('example.com');
+    expect(cfg.o).toBe('Example Org');
+    expect(cfg.ou).toBe('Ops');
+    expect(cfg.c).toBe('US');
+    expect(cfg.st).toBe('WA');
+    expect(cfg.l).toBe('Seattle');
+    expect(cfg.email).toBe('ops@example.com');
+    expect(cfg.dnsNames).toBe('example.com\nwww.example.com');
+    expect(cfg.ipAddresses).toBe('10.0.0.1');
+    expect(cfg.keyAlgorithm).toBe('RSA-4096');
+    expect(cfg.validityDays).toBe(365);
+    expect(cfg.isCA).toBe(false);
+    expect(cfg.keyUsageDigitalSignature).toBe(true);
+    expect(cfg.keyUsageKeyEncipherment).toBe(true);
+    expect(cfg.keyUsageDataEncipherment).toBe(true);
+    expect(cfg.ekuServerAuth).toBe(true);
+    expect(cfg.ekuClientAuth).toBe(true);
+  });
+
+  it('maps CSR fields including EC key and CA extension', () => {
+    const csr: CsrData = {
+      subject: {
+        raw: 'CN=ca.example.com',
+        commonName: 'ca.example.com',
+      },
+      publicKey: {
+        algorithm: 'ECDSA',
+        namedCurve: 'P-521',
+        spki: 'AA:BB',
+        spkiPem: '-----BEGIN PUBLIC KEY-----\nX\n-----END PUBLIC KEY-----\n',
+      },
+      signatureAlgorithm: 'ecdsa-with-SHA256',
+      extensions: [
+        { oid: '2.5.29.19', name: 'Basic Constraints', critical: true, value: 'CA: true', raw: '00' },
+      ],
+      raw: '-----BEGIN CERTIFICATE REQUEST-----\nX\n-----END CERTIFICATE REQUEST-----\n',
+    };
+
+    const cfg = mapX509ToOpenSslConfig(csr);
+
+    expect(cfg.cn).toBe('ca.example.com');
+    expect(cfg.keyAlgorithm).toBe('EC-P521');
+    expect(cfg.isCA).toBe(true);
+    expect(cfg.validityDays).toBeUndefined();
   });
 });

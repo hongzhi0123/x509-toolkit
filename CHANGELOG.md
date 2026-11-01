@@ -13,6 +13,8 @@ All notable changes to this project will be documented here.
 - Custom editor for CRL files (`.crl`)
 - P12/PFX support in custom certificate editor (`.p12`, `.pfx`)
 - Extension test coverage for custom editor association sync and setting-driven enable/disable behavior
+- Create Certificate form actions to prefill renewal profiles from existing CSR and certificate files
+- Open single-line PEM text and convert PEM output between multiline and single-line formats
 
 ### Changed
 

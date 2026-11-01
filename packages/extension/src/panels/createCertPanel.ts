@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr, parseOpenSslConfig, serializeOpenSslConfig } from '@x509-toolkit/core';
+import { parseCertificate, parseCsr, parseP12, generateCertificate, generateCsr, parseOpenSslConfig, serializeOpenSslConfig, mapX509ToOpenSslConfig } from '@x509-toolkit/core';
 import { getOrCreatePanel, sendLoading, sendCertificates, sendCsr } from './mainViewerPanel';
 import type { CertCreateParams, CreateCertToExtMsg, ExtToCreateCertMsg, InputDialogFieldDef, OpenSslConfig } from '@x509-toolkit/core';
 import { requestInputDialog, resolveInputDialogRequest } from '../utils/requestBridgeUtils';
@@ -173,6 +173,66 @@ export function openCreateCertPanel(
               }
             } catch (e) {
               createCertQueue.post(panel, { type: 'error', message: `Failed to load config: ${(e as Error).message}` });
+            }
+            break;
+          }
+
+          case 'pickRenewFromCsr': {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              openLabel: 'Load CSR Profile',
+              title: 'Select Certificate Signing Request (CSR)',
+              filters: {
+                'Certificate Signing Request': ['csr', 'req', 'pem', 'der'],
+                'All Files': ['*'],
+              },
+            });
+            if (!uris?.[0]) break;
+
+            try {
+              const fileName = uris[0].fsPath.split(/[/\\]/).pop() ?? uris[0].fsPath;
+              const buf = fs.readFileSync(uris[0].fsPath);
+              const csr = await parseCsr(buf);
+              const config = mapX509ToOpenSslConfig(csr);
+              createCertQueue.post(panel, {
+                type: 'renewProfileLoaded',
+                sourceType: 'csr',
+                sourceName: fileName,
+                subject: csr.subject.raw,
+                config,
+              });
+            } catch (e) {
+              createCertQueue.post(panel, { type: 'error', message: `Failed to load CSR profile: ${(e as Error).message}` });
+            }
+            break;
+          }
+
+          case 'pickRenewFromCert': {
+            const uris = await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              openLabel: 'Load Certificate Profile',
+              title: 'Select Certificate (PEM or DER)',
+              filters: {
+                'Certificate Files': ['pem', 'crt', 'cer', 'der'],
+                'All Files': ['*'],
+              },
+            });
+            if (!uris?.[0]) break;
+
+            try {
+              const fileName = uris[0].fsPath.split(/[/\\]/).pop() ?? uris[0].fsPath;
+              const buf = fs.readFileSync(uris[0].fsPath);
+              const cert = await parseCertificate(buf);
+              const config = mapX509ToOpenSslConfig(cert);
+              createCertQueue.post(panel, {
+                type: 'renewProfileLoaded',
+                sourceType: 'certificate',
+                sourceName: fileName,
+                subject: cert.subject.raw,
+                config,
+              });
+            } catch (e) {
+              createCertQueue.post(panel, { type: 'error', message: `Failed to load certificate profile: ${(e as Error).message}` });
             }
             break;
           }

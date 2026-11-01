@@ -239,6 +239,8 @@ export type CreateCertToExtMsg =
   | { type: 'ready' }
   | { type: 'pickCaCert' }
   | { type: 'pickCaKey' }
+  | { type: 'pickRenewFromCsr' }
+  | { type: 'pickRenewFromCert' }
   | { type: 'pickCnfFile' }
   | { type: 'saveCnfFile'; config: OpenSslConfig }
   | { type: 'saveDefaults'; config: OpenSslConfig }
@@ -254,6 +256,7 @@ export type CreateCertToExtMsg =
 export type ExtToCreateCertMsg =
   | { type: 'caCertLoaded'; subject: string }
   | { type: 'caKeyLoaded'; description: string }
+  | { type: 'renewProfileLoaded'; sourceType: 'csr' | 'certificate'; sourceName: string; subject: string; config: OpenSslConfig }
   | { type: 'cnfLoaded'; config: OpenSslConfig }
   | { type: 'defaultsLoaded'; config: OpenSslConfig }
   | { type: 'generating' }
