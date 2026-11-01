@@ -193,6 +193,10 @@
     vscode.postMessage({ type: 'openConvertHub' });
   }
 
+  function handleOpenAsTextEditor(): void {
+    vscode.postMessage({ type: 'openAsTextEditor' } satisfies WebviewToExtMsg);
+  }
+
   function handlePassphraseSubmit(event: CustomEvent<string>): void {
     if (!passphraseRequest) return;
     const { requestId } = passphraseRequest;
@@ -274,7 +278,15 @@
     </div>
 
   {:else if state === 'csr' && csrData}
-    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
+    <CsrView
+      csr={csrData}
+      on:copy={handleCopyRequest}
+      on:signCsr={handleSignCsr}
+      on:saveCsr={handleSaveCsr}
+      on:saveKey={handleSaveKey}
+      on:saveBoth={handleSaveBoth}
+      on:openAsTextEditor={handleOpenAsTextEditor}
+    />
 
   {:else if state === 'ready' && activeCert}
     <div data-testid="viewer-state-ready">
@@ -376,6 +388,7 @@
         on:loadCaIssuer={handleLoadCaIssuer}
         on:importPrivateKey={handleImportPrivateKey}
         on:openConvertHub={handleOpenConvertHub}
+        on:openAsTextEditor={handleOpenAsTextEditor}
       />
     {/key}
     </div>

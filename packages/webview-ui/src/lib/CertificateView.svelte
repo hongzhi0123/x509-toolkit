@@ -17,7 +17,7 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; convertOutput: { pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; convertOutput: { pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void; openAsTextEditor: void }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -228,6 +228,14 @@
               on:click={() => { dispatch('openConvertHub'); closeActions(); }}
             >
               <span class="actions-item-icon">🔄</span> Open Conversion Hub…
+            </button>
+            <button
+              class="actions-item"
+              role="menuitem"
+              title="Reopen this file in the text editor"
+              on:click={() => { dispatch('openAsTextEditor'); closeActions(); }}
+            >
+              <span class="actions-item-icon">📝</span> Open with Text Editor
             </button>
           </div>
         {/if}

@@ -7,7 +7,7 @@
 
   export let csr: CsrData;
 
-  const dispatch = createEventDispatcher<{ copy: string; signCsr: void; saveCsr: void; saveKey: void; saveBoth: void }>();
+  const dispatch = createEventDispatcher<{ copy: string; signCsr: void; saveCsr: void; saveKey: void; saveBoth: void; openAsTextEditor: void }>();
 
   function copyText(text: string): void {
     dispatch('copy', text);
@@ -20,6 +20,7 @@
   function saveCsr(): void { dispatch('saveCsr'); }
   function saveKey(): void { dispatch('saveKey'); }
   function saveBoth(): void { dispatch('saveBoth'); }
+  function openAsTextEditor(): void { dispatch('openAsTextEditor'); }
 
   $: subject = csr.subject;
   $: pk = csr.publicKey;
@@ -151,6 +152,7 @@
         <div class="pem-toolbar">
           <button class="copy-btn" on:click={() => copyText(csr.raw)} title="Copy PEM">⧉ Copy PEM</button>
           <button class="copy-btn" on:click={saveCsr} title="Save CSR only">⤓ Save CSR only…</button>
+          <button class="copy-btn" on:click={openAsTextEditor} title="Open as text editor">📝 Open with Text Editor…</button>
         </div>
         <pre class="raw-pem">{csr.raw}</pre>
       </div>

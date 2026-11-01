@@ -372,7 +372,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
       return bridgeResult;
     };
 
-    webviewPanel.webview.onDidReceiveMessage((msg: WebviewToExtMsg) => {
+    webviewPanel.webview.onDidReceiveMessage(async (msg: WebviewToExtMsg) => {
       switch (msg.type) {
         case 'ready':
           readyCount += 1;
@@ -382,6 +382,10 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
           if (readyCount > 1 && renderedState.message) {
             queue.post(webviewPanel, renderedState.message);
           }
+          break;
+        case 'openAsTextEditor':
+          await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
+          await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
           break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);

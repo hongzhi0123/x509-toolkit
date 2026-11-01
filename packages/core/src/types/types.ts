@@ -157,7 +157,8 @@ export interface CrlData {
 
 export type CrlViewerToExtMsg =
   | { type: 'crlViewerReady' }
-  | { type: 'copyToClipboard'; value: string };
+  | { type: 'copyToClipboard'; value: string }
+  | { type: 'openAsTextEditor' };
 
 export type ExtToCrlViewerMsg =
   | { type: 'crlLoading' }
@@ -309,6 +310,7 @@ export type ExtToWebviewMsg =
 
 export type WebviewToExtMsg =
   | { type: 'ready' }
+  | { type: 'openAsTextEditor' }
   | { type: 'copyToClipboard'; value: string }
   | { type: 'selectCert'; index: number }
   | { type: 'downloadCaIssuer'; url: string }
@@ -382,6 +384,7 @@ export interface StandaloneKeyData {
 
 export type KeyViewerToExtMsg =
   | { type: 'keyViewerReady' }
+  | { type: 'openAsTextEditor' }
   | { type: 'copyToClipboard'; value: string }
   | { type: 'exportPrivateKey'; format: 'pkcs8-pem' | 'pkcs8-der' | 'pkcs1-pem' | 'pkcs1-der' | 'sec1-pem' | 'sec1-der'; encrypt: boolean; suggestedName: string }
   | { type: 'exportPublicKey'; format: 'spki-pem' | 'spki-der'; suggestedName: string }

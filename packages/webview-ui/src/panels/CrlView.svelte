@@ -25,6 +25,11 @@
     vscode.postMessage(msg);
   }
 
+  function openAsTextEditor(): void {
+    const msg: CrlViewerToExtMsg = { type: 'openAsTextEditor' };
+    vscode.postMessage(msg);
+  }
+
   function formatDate(iso: string): string {
     try {
       return new Date(iso).toLocaleString(undefined, {
@@ -262,7 +267,10 @@
     <!-- ── Raw PEM ── -->
     <SectionCard title="Raw CRL (PEM)" defaultOpen={false}>
       <div class="raw-pem-container">
-        <button class="export-btn" on:click={() => copyText(crl.raw)}>⎘ Copy PEM</button>
+        <div class="raw-pem-actions">
+          <button class="export-btn" on:click={() => copyText(crl.raw)}>⎘ Copy PEM</button>
+          <button class="export-btn" on:click={openAsTextEditor}>📝 Open with Text Editor…</button>
+        </div>
         <pre class="raw-pem">{crl.raw}</pre>
       </div>
     </SectionCard>
@@ -404,6 +412,7 @@
 
   /* ── Raw PEM ── */
   .raw-pem-container { display: flex; flex-direction: column; gap: 8px; }
+  .raw-pem-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .raw-pem {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: 0.78rem;
