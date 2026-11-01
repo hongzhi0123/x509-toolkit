@@ -5,6 +5,7 @@ import { openFile } from './commands/openFile';
 import { openFromExplorer } from './commands/openFromExplorer';
 import { inspectTlsServer } from './commands/inspectTlsServer';
 import { convertFormat } from './commands/convertFormat';
+import { convertSelectedCertificateText } from './commands/convertSelectedCertificateText';
 import { openKeyGenPanel } from './panels/keyGenPanel';
 import { registerCertCsrCustomEditors, syncCustomEditorAssociations } from './customEditors/certCsrCustomEditor';
 import { registerKeyCrlCustomEditors } from './customEditors/keyCrlCustomEditor';
@@ -17,6 +18,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('x509toolkit.openFromExplorer', openFromExplorer(context)),
     vscode.commands.registerCommand('x509toolkit.inspectTlsServer', inspectTlsServer(context)),
     vscode.commands.registerCommand('x509toolkit.convertFormat', convertFormat(context)),
+    vscode.commands.registerCommand('x509toolkit.convertSelectedCertificateText', convertSelectedCertificateText()),
     vscode.commands.registerCommand('x509toolkit.generateKey', openKeyGenPanel(context))
   );
 

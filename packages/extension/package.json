@@ -155,6 +155,11 @@
         "icon": "$(arrow-swap)"
       },
       {
+        "command": "x509toolkit.convertSelectedCertificateText",
+        "title": "X.509 Toolkit: Convert Selected Certificate Text",
+        "icon": "$(symbol-string)"
+      },
+      {
         "command": "x509toolkit.generateKey",
         "title": "X.509 Toolkit: Generate Key Pair",
         "icon": "$(add)"
@@ -173,6 +178,11 @@
           "command": "x509toolkit.showFromSelection",
           "when": "editorTextFocus && editorHasSelection",
           "group": "1_modification@100"
+        },
+        {
+          "command": "x509toolkit.convertSelectedCertificateText",
+          "when": "editorTextFocus && editorHasSelection",
+          "group": "1_modification@110"
         }
       ],
       "commandPalette": [
@@ -191,6 +201,10 @@
         },
         {
           "command": "x509toolkit.convertFormat"
+        },
+        {
+          "command": "x509toolkit.convertSelectedCertificateText",
+          "when": "editorTextFocus"
         },
         {
           "command": "x509toolkit.generateKey"

@@ -321,6 +321,13 @@ export type WebviewToExtMsg =
   | { type: 'saveCsrFile' }
   | { type: 'savePrivateKey' }
   | { type: 'saveBothFiles'; suggestedName: string }
+  | {
+      type: 'convertCertOutput';
+      pem: string;
+      suggestedName: string;
+      output: 'pem-wrapped' | 'pem-single-line' | 'base64';
+      destination: 'copy' | 'save';
+    }
   /** Response to 'requestPassphrase'; passphrase is null if the user cancelled */
   | { type: 'passphraseResponse'; requestId: string; passphrase: string | null }
   /** Response to 'requestInputDialog'; values is null if the user cancelled */
