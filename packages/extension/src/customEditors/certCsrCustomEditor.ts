@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain } from '@x509-toolkit/core';
+import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64 } from '@x509-toolkit/core';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
@@ -35,6 +35,38 @@ function isPemCrlText(text: string): boolean {
 
 function readFlag(): boolean {
   return vscode.workspace.getConfiguration('x509toolkit').get<boolean>('useCustomEditor.enabled', true);
+}
+
+async function handleConvertCertOutputMessage(msg: Extract<WebviewToExtMsg, { type: 'convertCertOutput' }>): Promise<void> {
+  const output = msg.output === 'pem-wrapped'
+    ? canonicalizePemBlocks(msg.pem)
+    : msg.output === 'pem-single-line'
+      ? toOneLinePem(msg.pem)
+      : toRawBase64(msg.pem);
+
+  if (msg.destination === 'copy') {
+    await vscode.env.clipboard.writeText(output);
+    void vscode.window.showInformationMessage('Converted certificate output copied to clipboard.');
+    return;
+  }
+
+  const ext = msg.output === 'base64' ? 'b64' : 'pem';
+  const safeBase = msg.suggestedName.replace(/\.[a-zA-Z0-9]+$/, '');
+  const defaultUri = vscode.Uri.file(`${safeBase}.${ext}`);
+  const saveUri = await vscode.window.showSaveDialog({
+    defaultUri,
+    filters: msg.output === 'base64'
+      ? { 'Base64 Text': ['b64', 'txt'], 'All Files': ['*'] }
+      : { 'PEM Certificate': ['pem', 'crt', 'cer'], 'All Files': ['*'] },
+    saveLabel: 'Save Converted Output',
+    title: 'Save Converted Certificate Output',
+  });
+  if (!saveUri) {
+    return;
+  }
+
+  fs.writeFileSync(saveUri.fsPath, output, 'utf8');
+  void vscode.window.showInformationMessage(`Converted output saved to ${saveUri.fsPath}`);
 }
 
 async function promptPassphraseInInputBox(
@@ -357,6 +389,9 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
           break;
         case 'passphraseResponse':
           resolvePassphraseRequest(msg.requestId, msg.passphrase);
+          break;
+        case 'convertCertOutput':
+          void handleConvertCertOutputMessage(msg);
           break;
         default:
           break;

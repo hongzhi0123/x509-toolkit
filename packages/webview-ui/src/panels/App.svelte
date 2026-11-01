@@ -157,6 +157,10 @@
     vscode.postMessage({ type: 'exportCert', ...event.detail });
   }
 
+  function handleConvertOutput(event: CustomEvent<{ pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }>): void {
+    vscode.postMessage({ type: 'convertCertOutput', ...event.detail });
+  }
+
   function handleExportPrivateKey(event: CustomEvent<{ keyPem: string; suggestedName: string }>): void {
     vscode.postMessage({ type: 'exportPrivateKey', ...event.detail });
   }
@@ -366,6 +370,7 @@
         topOffset={stickyHeaderHeight}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
+        on:convertOutput={handleConvertOutput}
         on:exportPrivateKey={handleExportPrivateKey}
         on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
