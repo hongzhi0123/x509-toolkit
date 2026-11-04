@@ -134,6 +134,10 @@
     vscode.postMessage({ type: 'copyToClipboard', value } satisfies KeyViewerToExtMsg);
   }
 
+  function openAsTextEditor(): void {
+    vscode.postMessage({ type: 'openAsTextEditor' } satisfies KeyViewerToExtMsg);
+  }
+
   function exportPrivateKey(): void {
     if (!keyData) return;
     const base = (keyData.algorithm + '-key').toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -299,6 +303,10 @@
           {/each}
         </select>
         <button class="action-btn" on:click={exportPublicKey}>Save Public Key…</button>
+      </div>
+      <div class="export-row">
+        <span class="export-label">Editor</span>
+        <button class="action-btn" on:click={openAsTextEditor}>Open with Text Editor…</button>
       </div>
     </SectionCard>
   {/if}

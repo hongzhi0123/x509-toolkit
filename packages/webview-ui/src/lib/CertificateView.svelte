@@ -17,7 +17,7 @@
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
 
-  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void }>();
+  const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; convertOutput: { pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void; openAsTextEditor: void }>();
 
   function copy(value: string): void {
     dispatch('copy', value);
@@ -27,6 +27,12 @@
     const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
     const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
     dispatch('export', { pem: cert.raw, suggestedName: `${safeName}.${format}`, format });
+  }
+
+  function convertOutput(output: 'pem-wrapped' | 'pem-single-line' | 'base64', destination: 'copy' | 'save'): void {
+    const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
+    const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
+    dispatch('convertOutput', { pem: cert.raw, suggestedName: safeName, output, destination });
   }
 
   function createP12(): void {
@@ -173,6 +179,22 @@
             >
               <span class="actions-item-icon">⤓</span> Export as DER
             </button>
+            <hr class="actions-separator" />
+            <button class="actions-item" role="menuitem" on:click={() => { convertOutput('pem-wrapped', 'copy'); closeActions(); }}>
+              <span class="actions-item-icon">⧉</span> Copy PEM (64-char wrapped)
+            </button>
+            <button class="actions-item" role="menuitem" on:click={() => { convertOutput('pem-single-line', 'copy'); closeActions(); }}>
+              <span class="actions-item-icon">⧉</span> Copy PEM (single line)
+            </button>
+            <button class="actions-item" role="menuitem" on:click={() => { convertOutput('base64', 'copy'); closeActions(); }}>
+              <span class="actions-item-icon">⧉</span> Copy Base64 only
+            </button>
+            <button class="actions-item" role="menuitem" on:click={() => { convertOutput('pem-single-line', 'save'); closeActions(); }}>
+              <span class="actions-item-icon">⤓</span> Save PEM (single line)
+            </button>
+            <button class="actions-item" role="menuitem" on:click={() => { convertOutput('base64', 'save'); closeActions(); }}>
+              <span class="actions-item-icon">⤓</span> Save Base64 only
+            </button>
             {#if !cert.isCA}
               <button
                 class="actions-item"
@@ -206,6 +228,14 @@
               on:click={() => { dispatch('openConvertHub'); closeActions(); }}
             >
               <span class="actions-item-icon">🔄</span> Open Conversion Hub…
+            </button>
+            <button
+              class="actions-item"
+              role="menuitem"
+              title="Reopen this file in the text editor"
+              on:click={() => { dispatch('openAsTextEditor'); closeActions(); }}
+            >
+              <span class="actions-item-icon">📝</span> Open with Text Editor
             </button>
           </div>
         {/if}

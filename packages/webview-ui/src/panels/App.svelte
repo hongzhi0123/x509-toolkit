@@ -157,6 +157,10 @@
     vscode.postMessage({ type: 'exportCert', ...event.detail });
   }
 
+  function handleConvertOutput(event: CustomEvent<{ pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }>): void {
+    vscode.postMessage({ type: 'convertCertOutput', ...event.detail });
+  }
+
   function handleExportPrivateKey(event: CustomEvent<{ keyPem: string; suggestedName: string }>): void {
     vscode.postMessage({ type: 'exportPrivateKey', ...event.detail });
   }
@@ -187,6 +191,10 @@
 
   function handleOpenConvertHub(): void {
     vscode.postMessage({ type: 'openConvertHub' });
+  }
+
+  function handleOpenAsTextEditor(): void {
+    vscode.postMessage({ type: 'openAsTextEditor' } satisfies WebviewToExtMsg);
   }
 
   function handlePassphraseSubmit(event: CustomEvent<string>): void {
@@ -270,7 +278,15 @@
     </div>
 
   {:else if state === 'csr' && csrData}
-    <CsrView csr={csrData} on:copy={handleCopyRequest} on:signCsr={handleSignCsr} on:saveCsr={handleSaveCsr} on:saveKey={handleSaveKey} on:saveBoth={handleSaveBoth} />
+    <CsrView
+      csr={csrData}
+      on:copy={handleCopyRequest}
+      on:signCsr={handleSignCsr}
+      on:saveCsr={handleSaveCsr}
+      on:saveKey={handleSaveKey}
+      on:saveBoth={handleSaveBoth}
+      on:openAsTextEditor={handleOpenAsTextEditor}
+    />
 
   {:else if state === 'ready' && activeCert}
     <div data-testid="viewer-state-ready">
@@ -366,11 +382,13 @@
         topOffset={stickyHeaderHeight}
         on:copy={handleCopyRequest}
         on:export={handleExportCert}
+        on:convertOutput={handleConvertOutput}
         on:exportPrivateKey={handleExportPrivateKey}
         on:createP12={handleCreateP12}
         on:loadCaIssuer={handleLoadCaIssuer}
         on:importPrivateKey={handleImportPrivateKey}
         on:openConvertHub={handleOpenConvertHub}
+        on:openAsTextEditor={handleOpenAsTextEditor}
       />
     {/key}
     </div>

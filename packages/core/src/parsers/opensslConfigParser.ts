@@ -1,4 +1,4 @@
-import type { KeyAlgorithm, OpenSslConfig } from '../types/types';
+import type { CertificateData, CertExtension, CsrData, KeyAlgorithm, OpenSslConfig } from '../types/types';
 
 /**
  * A parsed OpenSSL config section: trimmed key → value.
@@ -246,6 +246,135 @@ export function parseOpenSslConfig(text: string): OpenSslConfig {
   }
 
   return result;
+}
+
+function getExtensionByOid(extensions: CertExtension[], oid: string): CertExtension | undefined {
+  return extensions.find(ext => ext.oid === oid);
+}
+
+function splitTokens(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map(token => token.trim())
+    .filter(Boolean);
+}
+
+function deriveKeyAlgorithm(algorithm: string, keySize?: number, namedCurve?: string): KeyAlgorithm | undefined {
+  const normalizedAlgorithm = algorithm.trim().toUpperCase();
+  const normalizedCurve = (namedCurve ?? '').trim().toUpperCase();
+
+  if (normalizedAlgorithm.includes('RSA')) {
+    return keySize && keySize >= 3072 ? 'RSA-4096' : 'RSA-2048';
+  }
+
+  if (normalizedAlgorithm.includes('EC') || normalizedAlgorithm.includes('ECDSA')) {
+    if (normalizedCurve.includes('521')) return 'EC-P521';
+    if (normalizedCurve.includes('384')) return 'EC-P384';
+    if (normalizedCurve.includes('256')) return 'EC-P256';
+    if (keySize === 521) return 'EC-P521';
+    if (keySize === 384) return 'EC-P384';
+    return 'EC-P256';
+  }
+
+  return undefined;
+}
+
+function deriveValidityDays(cert: CertificateData): number | undefined {
+  const notBeforeMs = Date.parse(cert.validity.notBefore);
+  const notAfterMs = Date.parse(cert.validity.notAfter);
+  if (Number.isNaN(notBeforeMs) || Number.isNaN(notAfterMs) || notAfterMs <= notBeforeMs) {
+    return undefined;
+  }
+  const days = Math.max(1, Math.round((notAfterMs - notBeforeMs) / 86_400_000));
+  return Number.isFinite(days) ? days : undefined;
+}
+
+function parseSanExtension(extensions: CertExtension[]): Pick<OpenSslConfig, 'dnsNames' | 'ipAddresses'> {
+  const san = getExtensionByOid(extensions, '2.5.29.17');
+  if (!san) return {};
+
+  const dns: string[] = [];
+  const ips: string[] = [];
+  for (const token of splitTokens(san.value)) {
+    const match = token.match(/^(DNS|IP)\s*:\s*(.+)$/i);
+    if (!match) continue;
+    const value = match[2].trim();
+    if (!value) continue;
+    if (match[1].toUpperCase() === 'DNS') dns.push(value);
+    else ips.push(value);
+  }
+
+  return {
+    ...(dns.length > 0 ? { dnsNames: dns.join('\n') } : {}),
+    ...(ips.length > 0 ? { ipAddresses: ips.join('\n') } : {}),
+  };
+}
+
+function parseKeyUsageExtension(extensions: CertExtension[]): Partial<OpenSslConfig> {
+  const ku = getExtensionByOid(extensions, '2.5.29.15');
+  if (!ku) return {};
+  const normalized = ku.value.toLowerCase();
+  return {
+    keyUsageDigitalSignature: normalized.includes('digital signature'),
+    keyUsageKeyEncipherment: normalized.includes('key encipherment'),
+    keyUsageDataEncipherment: normalized.includes('data encipherment'),
+    keyUsageKeyCertSign: normalized.includes('key cert sign'),
+    keyUsageCRLSign: normalized.includes('crl sign'),
+  };
+}
+
+function parseExtendedKeyUsageExtension(extensions: CertExtension[]): Partial<OpenSslConfig> {
+  const eku = getExtensionByOid(extensions, '2.5.29.37');
+  if (!eku) return {};
+  const normalized = eku.value.toLowerCase();
+  return {
+    ekuServerAuth: normalized.includes('serverauth'),
+    ekuClientAuth: normalized.includes('clientauth'),
+    ekuCodeSigning: normalized.includes('codesigning'),
+    ekuEmailProtection: normalized.includes('emailprotection'),
+  };
+}
+
+function parseIsCaFromExtensions(extensions: CertExtension[]): boolean | undefined {
+  const basicConstraints = getExtensionByOid(extensions, '2.5.29.19');
+  if (!basicConstraints) return undefined;
+  return /CA\s*:\s*TRUE/i.test(basicConstraints.value);
+}
+
+/**
+ * Convert parsed CSR/certificate data into create-certificate form settings.
+ * Only recognized fields are returned, so callers can merge without clobbering
+ * unrelated in-progress user edits.
+ */
+export function mapX509ToOpenSslConfig(input: CertificateData | CsrData): OpenSslConfig {
+  const config: OpenSslConfig = {};
+  const { subject, publicKey, extensions } = input;
+
+  if (subject.commonName !== undefined) config.cn = subject.commonName;
+  if (subject.organization !== undefined) config.o = subject.organization;
+  if (subject.organizationalUnit !== undefined) config.ou = subject.organizationalUnit;
+  if (subject.country !== undefined) config.c = subject.country;
+  if (subject.state !== undefined) config.st = subject.state;
+  if (subject.locality !== undefined) config.l = subject.locality;
+  if (subject.email !== undefined) config.email = subject.email;
+
+  const derivedKeyAlgorithm = deriveKeyAlgorithm(publicKey.algorithm, publicKey.keySize, publicKey.namedCurve);
+  if (derivedKeyAlgorithm !== undefined) config.keyAlgorithm = derivedKeyAlgorithm;
+
+  Object.assign(config, parseSanExtension(extensions));
+  Object.assign(config, parseKeyUsageExtension(extensions));
+  Object.assign(config, parseExtendedKeyUsageExtension(extensions));
+
+  if ('isCA' in input) {
+    config.isCA = input.isCA;
+    const derivedValidityDays = deriveValidityDays(input);
+    if (derivedValidityDays !== undefined) config.validityDays = derivedValidityDays;
+  } else {
+    const csrIsCa = parseIsCaFromExtensions(extensions);
+    if (csrIsCa !== undefined) config.isCA = csrIsCa;
+  }
+
+  return config;
 }
 
 /** Serialize form-compatible settings as a portable OpenSSL request config. */

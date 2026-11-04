@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain } from '@x509-toolkit/core';
+import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64 } from '@x509-toolkit/core';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
@@ -35,6 +35,38 @@ function isPemCrlText(text: string): boolean {
 
 function readFlag(): boolean {
   return vscode.workspace.getConfiguration('x509toolkit').get<boolean>('useCustomEditor.enabled', true);
+}
+
+async function handleConvertCertOutputMessage(msg: Extract<WebviewToExtMsg, { type: 'convertCertOutput' }>): Promise<void> {
+  const output = msg.output === 'pem-wrapped'
+    ? canonicalizePemBlocks(msg.pem)
+    : msg.output === 'pem-single-line'
+      ? toOneLinePem(msg.pem)
+      : toRawBase64(msg.pem);
+
+  if (msg.destination === 'copy') {
+    await vscode.env.clipboard.writeText(output);
+    void vscode.window.showInformationMessage('Converted certificate output copied to clipboard.');
+    return;
+  }
+
+  const ext = msg.output === 'base64' ? 'b64' : 'pem';
+  const safeBase = msg.suggestedName.replace(/\.[a-zA-Z0-9]+$/, '');
+  const defaultUri = vscode.Uri.file(`${safeBase}.${ext}`);
+  const saveUri = await vscode.window.showSaveDialog({
+    defaultUri,
+    filters: msg.output === 'base64'
+      ? { 'Base64 Text': ['b64', 'txt'], 'All Files': ['*'] }
+      : { 'PEM Certificate': ['pem', 'crt', 'cer'], 'All Files': ['*'] },
+    saveLabel: 'Save Converted Output',
+    title: 'Save Converted Certificate Output',
+  });
+  if (!saveUri) {
+    return;
+  }
+
+  fs.writeFileSync(saveUri.fsPath, output, 'utf8');
+  void vscode.window.showInformationMessage(`Converted output saved to ${saveUri.fsPath}`);
 }
 
 async function promptPassphraseInInputBox(
@@ -262,16 +294,18 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
 
     const raw = fs.readFileSync(document.uri.fsPath);
     const asText = raw.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    const normalizedText = containsPemBlock(asText) ? canonicalizePemBlocks(asText) : asText;
+    const normalizedRaw = normalizedText === asText ? raw : Buffer.from(normalizedText, 'utf8');
     const ext = document.uri.fsPath.toLowerCase().split('.').pop() ?? '';
     const fileName = path.basename(document.uri.fsPath);
 
-    if (isPemCrlText(asText)) {
+    if (isPemCrlText(normalizedText)) {
       await openWithViewPreservingPreview(document.uri, CRL_EDITOR_VIEW_TYPE, EDITOR_VIEW_TYPE);
       await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, CRL_EDITOR_VIEW_TYPE);
       return;
     }
 
-    if (looksLikeKeyFile(raw)) {
+    if (looksLikeKeyFile(normalizedRaw)) {
       await openWithViewPreservingPreview(document.uri, KEY_EDITOR_VIEW_TYPE, EDITOR_VIEW_TYPE);
       await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, KEY_EDITOR_VIEW_TYPE);
       return;
@@ -338,7 +372,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
       return bridgeResult;
     };
 
-    webviewPanel.webview.onDidReceiveMessage((msg: WebviewToExtMsg) => {
+    webviewPanel.webview.onDidReceiveMessage(async (msg: WebviewToExtMsg) => {
       switch (msg.type) {
         case 'ready':
           readyCount += 1;
@@ -349,12 +383,19 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
             queue.post(webviewPanel, renderedState.message);
           }
           break;
+        case 'openAsTextEditor':
+          await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
+          await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
+          break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);
           void vscode.window.showInformationMessage('Copied to clipboard.');
           break;
         case 'passphraseResponse':
           resolvePassphraseRequest(msg.requestId, msg.passphrase);
+          break;
+        case 'convertCertOutput':
+          void handleConvertCertOutputMessage(msg);
           break;
         default:
           break;
@@ -366,8 +407,8 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
         queue,
         webviewPanel,
         fileName,
-        raw,
-        asText,
+        normalizedRaw,
+        normalizedText,
         ext,
         requestPassphraseSafely,
         renderedState,

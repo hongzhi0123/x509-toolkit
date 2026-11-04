@@ -14,6 +14,7 @@ export type ViewerMessageHandlerMap = {
   savePrivateKey: (msg: Extract<WebviewToExtMsg, { type: 'savePrivateKey' }>) => Promise<void> | void;
   saveCsrFile: (msg: Extract<WebviewToExtMsg, { type: 'saveCsrFile' }>) => Promise<void> | void;
   saveBothFiles: (msg: Extract<WebviewToExtMsg, { type: 'saveBothFiles' }>) => Promise<void> | void;
+  convertCertOutput: (msg: Extract<WebviewToExtMsg, { type: 'convertCertOutput' }>) => Promise<void> | void;
   openConvertHub: (msg: Extract<WebviewToExtMsg, { type: 'openConvertHub' }>) => Promise<void> | void;
 };
 
@@ -35,6 +36,7 @@ export async function routeViewerMessage(
     case 'savePrivateKey': return handlers.savePrivateKey(msg);
     case 'saveCsrFile': return handlers.saveCsrFile(msg);
     case 'saveBothFiles': return handlers.saveBothFiles(msg);
+    case 'convertCertOutput': return handlers.convertCertOutput(msg);
     case 'openConvertHub': return handlers.openConvertHub(msg);
   }
 }

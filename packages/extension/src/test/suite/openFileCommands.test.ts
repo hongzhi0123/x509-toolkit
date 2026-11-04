@@ -137,6 +137,7 @@ suite('openFile and openFromExplorer commands', () => {
   let derCertPath: string;
   let keyPath: string;
   let certStoredAsKeyPath: string;
+  let certOneLinePemPath: string;
   let keyStoredAsPemPath: string;
   let unsupportedPath: string;
   let createdPanels: FakePanel[];
@@ -152,6 +153,8 @@ suite('openFile and openFromExplorer commands', () => {
     fs.writeFileSync(derCertPath, pemCertificateToDer(certificate.raw));
     certStoredAsKeyPath = path.join(tmpDir, 'cert-stored-as-key.key');
     fs.writeFileSync(certStoredAsKeyPath, certificate.raw, 'utf8');
+    certOneLinePemPath = path.join(tmpDir, 'cert-one-line.pem');
+    fs.writeFileSync(certOneLinePemPath, certificate.raw.replace(/\r?\n/g, ''), 'utf8');
 
     const csr = await generateCsr(makeParams({ cn: 'command-route-csr' }));
     csrPath = path.join(tmpDir, 'request.csr');
@@ -274,6 +277,19 @@ suite('openFile and openFromExplorer commands', () => {
 
   test('openFromExplorer routes certificate PEM marker even when extension is .key', async () => {
     await openFromExplorer(mockContext())(vscode.Uri.file(certStoredAsKeyPath));
+
+    assert.strictEqual(createWebviewPanelStub.firstCall.args[0], 'x509toolkit');
+    const panel = createdPanels[0];
+    await panel.fireMessage({ type: 'ready' });
+
+    const msg = findPostedMessage<ExtToWebviewMsg & { type: 'certificate'; chain: Array<{ sourceFormat?: string; subject: { commonName?: string } }> }>(panel, 'certificate');
+    assert.ok(msg);
+    assert.strictEqual(msg?.chain[0].sourceFormat, 'pem');
+    assert.strictEqual(msg?.chain[0].subject.commonName, 'command-route-cert');
+  });
+
+  test('openFromExplorer routes one-line PEM certificate to main viewer', async () => {
+    await openFromExplorer(mockContext())(vscode.Uri.file(certOneLinePemPath));
 
     assert.strictEqual(createWebviewPanelStub.firstCall.args[0], 'x509toolkit');
     const panel = createdPanels[0];

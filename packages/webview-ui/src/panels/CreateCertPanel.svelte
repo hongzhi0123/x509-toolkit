@@ -43,6 +43,7 @@
   type PanelState = 'idle' | 'generating' | 'done' | 'csrReady';
   let panelState: PanelState = 'idle';
   let errorMsg = '';
+  let infoMsg = '';
   let csrPemReady = '';  // CSR PEM returned by csrReady;
   let formActionsOpen = false;
 
@@ -128,9 +129,15 @@
         case 'cnfLoaded':
           applyCnfConfig(msg.config);
           errorMsg = '';
+          infoMsg = 'Loaded settings from OpenSSL config file.';
           break;
         case 'defaultsLoaded':
           applyCnfConfig(msg.config);
+          break;
+        case 'renewProfileLoaded':
+          applyCnfConfig(msg.config);
+          errorMsg = '';
+          infoMsg = `Loaded profile from ${msg.sourceType} (${msg.sourceName}): ${msg.subject}`;
           break;
         case 'generating':
           panelState = 'generating';
@@ -146,6 +153,7 @@
           break;
         case 'error':
           errorMsg = msg.message;
+          infoMsg = '';
           panelState = 'idle';
           break;
         case 'requestInputDialog':
@@ -167,6 +175,8 @@
   // ── actions ───────────────────────────────────────────────────────────────
   function pickCaCert(): void  { vscode.postMessage({ type: 'pickCaCert' }); }
   function pickCaKey(): void   { vscode.postMessage({ type: 'pickCaKey' }); }
+  function pickRenewFromCsr(): void { closeFormActions(); vscode.postMessage({ type: 'pickRenewFromCsr' }); }
+  function pickRenewFromCert(): void { closeFormActions(); vscode.postMessage({ type: 'pickRenewFromCert' }); }
   function closeFormActions(): void { formActionsOpen = false; }
   function toggleFormActions(): void { formActionsOpen = !formActionsOpen; }
   function handleFormActionsFocusOut(event: FocusEvent): void {
@@ -190,7 +200,7 @@
     keyUsageDigitalSignature = true; keyUsageKeyEncipherment = true; keyUsageDataEncipherment = false;
     keyUsageKeyCertSign = false; keyUsageCRLSign = false;
     ekuServerAuth = true; ekuClientAuth = true; ekuCodeSigning = false; ekuEmailProtection = false;
-    caCertSubject = ''; caKeyDesc = ''; password = ''; passwordConfirm = ''; keyPassword = ''; errorMsg = '';
+    caCertSubject = ''; caKeyDesc = ''; password = ''; passwordConfirm = ''; keyPassword = ''; errorMsg = ''; infoMsg = '';
     vscode.postMessage({ type: 'clearForm' });
   }
   function cancel(): void      { vscode.postMessage({ type: 'cancel' }); }
@@ -324,6 +334,8 @@
       </button>
       {#if formActionsOpen}
       <div class="form-actions-popup">
+        <button role="menuitem" data-testid="create-cert-load-renew-csr" on:click={pickRenewFromCsr}>Load from CSR...</button>
+        <button role="menuitem" data-testid="create-cert-load-renew-cert" on:click={pickRenewFromCert}>Load from Certificate...</button>
         <button role="menuitem" on:click={pickCnf}>Load CNF File...</button>
         <button role="menuitem" on:click={saveCnf}>Save as CNF File...</button>
         <button role="menuitem" on:click={saveDefaults}>Save as Default</button>
@@ -537,6 +549,10 @@
   <!-- ── Status / Error ───────────────────────────────────────────────────── -->
   {#if errorMsg}
     <div class="banner banner-error" data-testid="create-cert-error">{errorMsg}</div>
+  {/if}
+
+  {#if infoMsg && panelState !== 'generating'}
+    <div class="banner banner-info" data-testid="create-cert-info">{infoMsg}</div>
   {/if}
 
   {#if panelState === 'generating'}

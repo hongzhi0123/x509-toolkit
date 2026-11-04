@@ -99,4 +99,18 @@ describe('CreateCertPanel.svelte', () => {
     expect(postedMessages).toContainEqual({ type: 'pickCaKey' });
     expect(postedMessages.some(m => (m as { type?: string }).type === 'generate')).toBe(false);
   });
+
+  it('posts renewal import actions from form menu', async () => {
+    const { getByTestId } = await renderMounted();
+
+    await fireEvent.click(getByTestId('create-cert-form-actions'));
+    await fireEvent.click(getByTestId('create-cert-load-renew-csr'));
+
+    await fireEvent.click(getByTestId('create-cert-form-actions'));
+    await fireEvent.click(getByTestId('create-cert-load-renew-cert'));
+
+    expect(postedMessages).toContainEqual({ type: 'pickRenewFromCsr' });
+    expect(postedMessages).toContainEqual({ type: 'pickRenewFromCert' });
+  });
+
 });

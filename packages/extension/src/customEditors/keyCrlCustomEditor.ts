@@ -203,6 +203,11 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
           }
           break;
 
+        case 'openAsTextEditor':
+          await openWithViewPreservingPreview(document.uri, 'default', KEY_EDITOR_VIEW_TYPE);
+          await closeSourceCustomTabs(document.uri, KEY_EDITOR_VIEW_TYPE);
+          break;
+
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);
           void vscode.window.showInformationMessage('Copied to clipboard.');
@@ -408,7 +413,7 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const queue = createMessageQueue<ExtToCrlViewerMsg>();
     let readyCount = 0;
     let renderedState: ExtToCrlViewerMsg | undefined;
-    webviewPanel.webview.onDidReceiveMessage((msg: CrlViewerToExtMsg) => {
+    webviewPanel.webview.onDidReceiveMessage(async (msg: CrlViewerToExtMsg) => {
       switch (msg.type) {
         case 'crlViewerReady':
           readyCount += 1;
@@ -417,6 +422,10 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
           if (readyCount > 1 && renderedState) {
             queue.post(webviewPanel, renderedState);
           }
+          break;
+        case 'openAsTextEditor':
+          await openWithViewPreservingPreview(document.uri, 'default', CRL_EDITOR_VIEW_TYPE);
+          await closeSourceCustomTabs(document.uri, CRL_EDITOR_VIEW_TYPE);
           break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);

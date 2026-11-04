@@ -22,6 +22,7 @@ suite('messageRouterUtils', () => {
       savePrivateKey: async () => { calls.push('savePrivateKey'); },
       saveCsrFile: async () => { calls.push('saveCsrFile'); },
       saveBothFiles: async () => { calls.push('saveBothFiles'); },
+      convertCertOutput: async () => { calls.push('convertCertOutput'); },
       openConvertHub: async () => { calls.push('openConvertHub'); },
     };
 
@@ -39,6 +40,7 @@ suite('messageRouterUtils', () => {
       { type: 'savePrivateKey', msg: { type: 'savePrivateKey' } as WebviewToExtMsg },
       { type: 'saveCsrFile', msg: { type: 'saveCsrFile' } as WebviewToExtMsg },
       { type: 'saveBothFiles', msg: { type: 'saveBothFiles', suggestedName: 'cert' } as WebviewToExtMsg },
+      { type: 'convertCertOutput', msg: { type: 'convertCertOutput', pem: 'pem', suggestedName: 'cert', output: 'pem-single-line', destination: 'copy' } as WebviewToExtMsg },
       { type: 'openConvertHub', msg: { type: 'openConvertHub' } as WebviewToExtMsg },
     ];
 
@@ -65,6 +67,7 @@ suite('messageRouterUtils', () => {
       savePrivateKey: async () => { called = true; },
       saveCsrFile: async () => { called = true; },
       saveBothFiles: async () => { called = true; },
+      convertCertOutput: async () => { called = true; },
       openConvertHub: async () => { called = true; },
     };
 

@@ -4,7 +4,7 @@ import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { X509Certificate } from '@peculiar/x509';
-import { parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr, formatIssuerChainFailure, validateIssuerChain, isEncryptedKey } from '@x509-toolkit/core';
+import { canonicalizePemBlocks, parseCertificate, parsePEMChain, createP12Buffer, loadAndValidatePrivateKey, signCsr, formatIssuerChainFailure, validateIssuerChain, isEncryptedKey, toOneLinePem, toRawBase64 } from '@x509-toolkit/core';
 import type { CertificateData, CsrData, ExtToWebviewMsg, WebviewToExtMsg, InputDialogFieldDef, TlsConnectionInfo } from '@x509-toolkit/core';
 import { requestInputDialog, requestPassphrase, resolveInputDialogRequest, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
 import { routeViewerMessage } from '../utils/messageRouterUtils';
@@ -292,6 +292,7 @@ export async function handleWebviewMessage(
     savePrivateKey: (message) => handleSavePrivateKey(panel, message),
     saveCsrFile: (message) => handleSaveCsrFile(panel, message),
     saveBothFiles: (message) => handleSaveBothFiles(panel, message),
+    convertCertOutput: (message) => handleConvertCertOutput(panel, message),
     openConvertHub: (message) => handleOpenConvertHub(panel, message),
   });
 }
@@ -665,6 +666,41 @@ async function handleSaveBothFiles(
     pendingViewerCsrSaved = true;
     pendingViewerCsrKeySaved = true;
   }
+}
+
+async function handleConvertCertOutput(
+  _panel: vscode.WebviewPanel,
+  msg: Extract<WebviewToExtMsg, { type: 'convertCertOutput' }>
+): Promise<void> {
+  const output = msg.output === 'pem-wrapped'
+    ? canonicalizePemBlocks(msg.pem)
+    : msg.output === 'pem-single-line'
+      ? toOneLinePem(msg.pem)
+      : toRawBase64(msg.pem);
+
+  if (msg.destination === 'copy') {
+    await vscode.env.clipboard.writeText(output);
+    vscode.window.showInformationMessage('Converted certificate output copied to clipboard.');
+    return;
+  }
+
+  const ext = msg.output === 'base64' ? 'b64' : 'pem';
+  const safeBase = msg.suggestedName.replace(/\.[a-zA-Z0-9]+$/, '');
+  const defaultUri = vscode.Uri.file(`${safeBase}.${ext}`);
+  const saveUri = await vscode.window.showSaveDialog({
+    defaultUri,
+    filters: msg.output === 'base64'
+      ? { 'Base64 Text': ['b64', 'txt'], 'All Files': ['*'] }
+      : { 'PEM Certificate': ['pem', 'crt', 'cer'], 'All Files': ['*'] },
+    saveLabel: 'Save Converted Output',
+    title: 'Save Converted Certificate Output',
+  });
+  if (!saveUri) {
+    return;
+  }
+
+  fs.writeFileSync(saveUri.fsPath, output, 'utf8');
+  vscode.window.showInformationMessage(`Converted output saved to ${saveUri.fsPath}`);
 }
 
 async function handleOpenConvertHub(
