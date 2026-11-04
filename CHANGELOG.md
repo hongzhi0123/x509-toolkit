@@ -4,7 +4,7 @@ All notable changes to this project will be documented here.
 
 ---
 
-## [0.6.1] - 2026-10-31
+## [0.6.1] - 2026-11-04
 
 ### Added
 - Toggle display format between Hex/Decimal/Base64 for Serial/AKI/SKI/Footprint
