@@ -1,7 +1,10 @@
 import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64 } from '@x509-toolkit/core';
+import { X509Certificate } from '@peculiar/x509';
+import { canonicalizePemBlocks, containsPemBlock, formatIssuerChainFailure, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64, validateIssuerChain } from '@x509-toolkit/core';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
@@ -114,6 +117,62 @@ async function openLegacyFlow(uri: vscode.Uri): Promise<void> {
 
 async function openWithView(uri: vscode.Uri, viewType: string): Promise<void> {
   await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+}
+
+function downloadBytesFromUrl(url: string, redirectsLeft = 3): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error('Invalid URL'));
+      return;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      reject(new Error('Only http:// and https:// URLs are supported'));
+      return;
+    }
+
+    const requester = parsed.protocol === 'https:' ? https : http;
+    const req = requester.get(url, { timeout: 10_000 }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (redirectsLeft <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+        const next = new URL(res.headers.location, url).toString();
+        resolve(downloadBytesFromUrl(next, redirectsLeft - 1));
+        return;
+      }
+
+      if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        return;
+      }
+
+      const MAX_BYTES = 512 * 1024;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BYTES) {
+          req.destroy();
+          reject(new Error('Response too large (>512 KB)'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
+  });
 }
 
 function findSourceCustomTab(uri: vscode.Uri, viewType: string): vscode.Tab | undefined {
@@ -391,6 +450,68 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
           void vscode.env.clipboard.writeText(msg.value);
           void vscode.window.showInformationMessage('Copied to clipboard.');
           break;
+        case 'downloadCaIssuer':
+          downloadBytesFromUrl(msg.url)
+            .then((buf) => parseCertificate(buf))
+            .then((cert) => {
+              const reply: ExtToWebviewMsg = { type: 'caIssuerCert', cert, url: msg.url };
+              queue.post(webviewPanel, reply);
+            })
+            .catch((err: unknown) => {
+              const reply: ExtToWebviewMsg = {
+                type: 'caIssuerError',
+                url: msg.url,
+                message: (err as Error).message ?? String(err),
+              };
+              queue.post(webviewPanel, reply);
+            });
+          break;
+        case 'openCaCertFile': {
+          const uris = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            openLabel: 'Open CA Certificate',
+            title: 'Open CA / Issuer Certificate',
+            filters: {
+              'Certificate Files': ['pem', 'crt', 'cer', 'der'],
+              'All Files': ['*'],
+            },
+          });
+          if (!uris?.[0]) {
+            break;
+          }
+
+          const filePath = uris[0].fsPath;
+          const fileUrl = `file://${filePath.replace(/\\/g, '/')}`;
+          const sendFileErr = (message: string): void => {
+            queue.post(webviewPanel, { type: 'caIssuerError', url: fileUrl, message });
+          };
+
+          try {
+            const buf = fs.readFileSync(filePath);
+            const asText = buf.toString('utf8').trim();
+            const certs = asText.includes('-----BEGIN CERTIFICATE-----')
+              ? await parsePEMChain(asText)
+              : [await parseCertificate(buf)];
+
+            const topX509 = new X509Certificate(msg.topCertPem);
+            const failure = validateIssuerChain(
+              topX509,
+              certs.map((cert) => new X509Certificate(cert.raw)),
+            );
+            if (failure) {
+              sendFileErr(formatIssuerChainFailure(failure));
+              break;
+            }
+
+            certs.forEach((cert, idx) => {
+              const url = certs.length > 1 ? `${fileUrl}#${idx}` : fileUrl;
+              queue.post(webviewPanel, { type: 'caIssuerCert', cert, url });
+            });
+          } catch (err: unknown) {
+            sendFileErr((err as Error).message ?? String(err));
+          }
+          break;
+        }
         case 'passphraseResponse':
           resolvePassphraseRequest(msg.requestId, msg.passphrase);
           break;
