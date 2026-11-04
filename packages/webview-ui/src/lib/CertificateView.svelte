@@ -7,6 +7,8 @@
   import ExtensionsList from './ExtensionsList.svelte';
   import HexValue from './HexValue.svelte';
   import Fingerprints from './Fingerprints.svelte';
+  import { formatHexValue, getAvailableFormats, modeBadgeText, nextValueMode } from './valueFormat';
+  import type { ValueMode } from './valueFormat';
 
   export let cert: CertificateData;
   export let loadingUrls: Set<string> = new Set();
@@ -113,6 +115,7 @@
   let spkiPemOpen = false;
   let privKeyPemOpen = false;
   let actionsOpen = false;
+  let serialMode: ValueMode = 'hex';
 
   function toggleActions() { actionsOpen = !actionsOpen; }
   function closeActions() { actionsOpen = false; }
@@ -127,6 +130,9 @@
   }
 
   $: effectivePrivateKey = cert.privateKey ?? importedPrivateKey;
+  $: serialAvailableModes = getAvailableFormats(cert.serialNumber);
+  $: serialMode = serialAvailableModes.includes(serialMode) ? serialMode : (serialAvailableModes[0] ?? 'hex');
+  $: serialDisplayValue = formatHexValue(cert.serialNumber, serialMode) ?? cert.serialNumber;
 </script>
 
 <div class="cert-view">
@@ -310,7 +316,21 @@
       <FieldRow label="Not Before"    value={formatDate(cert.validity.notBefore)} copyable on:copy={() => copy(cert.validity.notBefore)} />
       <FieldRow label="Not After"     value={formatDate(cert.validity.notAfter)}  copyable on:copy={() => copy(cert.validity.notAfter)} />
       <FieldRow label="Status"        value={validityStatus(cert.validity)} />
-      <FieldRow label="Serial Number" value={cert.serialNumber} copyable mono on:copy={() => copy(cert.serialNumber)} />
+      <div class="field-row serial-row">
+        <span class="fl">Serial Number</span>
+        <span class="fv mono">{serialDisplayValue}</span>
+        <div class="serial-actions">
+          {#if serialAvailableModes.length > 1}
+            <button
+              class="copy-btn serial-toggle-btn"
+              on:click={() => serialMode = nextValueMode(serialMode, serialAvailableModes)}
+              title="Toggle serial format (hex/decimal/base64)"
+              aria-label="Toggle serial number format"
+            >{modeBadgeText(serialMode)}</button>
+          {/if}
+          <button class="copy-btn" on:click={() => copy(serialDisplayValue)} title="Copy">⧉</button>
+        </div>
+      </div>
     </SectionCard>
 
     <!-- Public Key -->
@@ -372,7 +392,7 @@
     <SectionCard title="Raw Certificate (PEM)" icon="📄" collapsed={true}>
       <div class="raw-pem-wrap">
         <button class="copy-btn raw-copy-btn" on:click={() => copy(cert.raw)} title="Copy PEM">
-          ⧉ Copy PEM
+          ⧉
         </button>
         <pre class="raw-pem">{cert.raw}</pre>
       </div>
@@ -382,7 +402,7 @@
     <SectionCard title="Binary Data (DER, {derHex.length} bytes)" icon="🗂️" collapsed={true}>
       <div class="raw-pem-wrap">
         <button class="copy-btn raw-copy-btn" on:click={() => copy(hexDumpText)} title="Copy hex dump">
-          ⧉ Copy
+          ⧉
         </button>
         <pre class="hex-dump">{hexDump}</pre>
       </div>
@@ -624,6 +644,50 @@
     display: flex;
     flex-direction: column;
     gap: 0.55rem;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 155px 1fr auto;
+    align-items: baseline;
+    padding: 0.28rem 0.7rem;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.04));
+  }
+
+  .field-row:hover {
+    background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.03));
+  }
+
+  .field-row .fl {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--vscode-descriptionForeground, #888);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .field-row .fv {
+    font-size: 0.82rem;
+    color: var(--vscode-editor-foreground);
+    word-break: break-word;
+  }
+
+  .field-row .fv.mono {
+    font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
+    font-size: 0.76rem;
+  }
+
+  .serial-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .serial-toggle-btn {
+    padding-left: 0.42rem;
+    padding-right: 0.42rem;
   }
 
   /* ── Hex field label ── */

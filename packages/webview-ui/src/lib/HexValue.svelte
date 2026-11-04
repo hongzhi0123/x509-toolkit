@@ -19,7 +19,7 @@
 <div class="hex-block">
   <div class="hex-toolbar">
     <span class="hex-count">{bytes.length} bytes</span>
-    <button class="copy-btn" on:click={() => dispatch('copy')} title="Copy hex">⧉ Copy</button>
+    <button class="copy-btn" on:click={() => dispatch('copy')} title="Copy hex">⧉</button>
   </div>
   <pre class="hex-content">{preview}{#if tooLong && !expanded}<span class="ellipsis"> …</span>{:else if tooLong}:{overflow.join(':')}{/if}</pre>
   {#if tooLong}
