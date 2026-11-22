@@ -70,6 +70,11 @@ async function closeSourceCustomTabs(uri: vscode.Uri, viewType: string): Promise
   }
 }
 
+async function fallbackToDefaultEditor(uri: vscode.Uri, sourceViewType: string): Promise<void> {
+  await openWithViewPreservingPreview(uri, 'default', sourceViewType);
+  await closeSourceCustomTabs(uri, sourceViewType);
+}
+
 async function promptPassphraseInInputBox(
   fileName: string,
   options?: { title?: string; description?: string; buttonLabel?: string; requireConfirm?: boolean },
@@ -123,8 +128,12 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
   async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
     if (!readFlag()) {
-      await openWithViewPreservingPreview(document.uri, 'default', KEY_EDITOR_VIEW_TYPE);
-      await closeSourceCustomTabs(document.uri, KEY_EDITOR_VIEW_TYPE);
+      await fallbackToDefaultEditor(document.uri, KEY_EDITOR_VIEW_TYPE);
+      return;
+    }
+
+    if (document.uri.scheme !== 'file') {
+      await fallbackToDefaultEditor(document.uri, KEY_EDITOR_VIEW_TYPE);
       return;
     }
 
@@ -204,8 +213,7 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
           break;
 
         case 'openAsTextEditor':
-          await openWithViewPreservingPreview(document.uri, 'default', KEY_EDITOR_VIEW_TYPE);
-          await closeSourceCustomTabs(document.uri, KEY_EDITOR_VIEW_TYPE);
+          await fallbackToDefaultEditor(document.uri, KEY_EDITOR_VIEW_TYPE);
           break;
 
         case 'copyToClipboard':
@@ -364,8 +372,7 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
         }
         const ok2 = await tryParse(pp2);
         if (!ok2) {
-          renderedState = { type: 'keyError', message: 'Incorrect passphrase or corrupted key file.' };
-          queue.post(webviewPanel, renderedState);
+          await fallbackToDefaultEditor(document.uri, KEY_EDITOR_VIEW_TYPE);
         }
       }
       return;
@@ -373,11 +380,7 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
     const ok = await tryParse();
     if (!ok) {
-      renderedState = {
-        type: 'keyError',
-        message: 'Failed to parse key - not a recognised private or public key format.',
-      };
-      queue.post(webviewPanel, renderedState);
+      await fallbackToDefaultEditor(document.uri, KEY_EDITOR_VIEW_TYPE);
     }
   }
 }
@@ -396,8 +399,12 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
   async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
     if (!readFlag()) {
-      await openWithViewPreservingPreview(document.uri, 'default', CRL_EDITOR_VIEW_TYPE);
-      await closeSourceCustomTabs(document.uri, CRL_EDITOR_VIEW_TYPE);
+      await fallbackToDefaultEditor(document.uri, CRL_EDITOR_VIEW_TYPE);
+      return;
+    }
+
+    if (document.uri.scheme !== 'file') {
+      await fallbackToDefaultEditor(document.uri, CRL_EDITOR_VIEW_TYPE);
       return;
     }
 
@@ -424,8 +431,7 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
           }
           break;
         case 'openAsTextEditor':
-          await openWithViewPreservingPreview(document.uri, 'default', CRL_EDITOR_VIEW_TYPE);
-          await closeSourceCustomTabs(document.uri, CRL_EDITOR_VIEW_TYPE);
+          await fallbackToDefaultEditor(document.uri, CRL_EDITOR_VIEW_TYPE);
           break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);
@@ -448,16 +454,14 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
         : [parseCrl(raw)];
 
       if (crls.length === 0) {
-        renderedState = { type: 'crlError', message: 'No CRL entries found in file.' };
-        queue.post(webviewPanel, renderedState);
+        await fallbackToDefaultEditor(document.uri, CRL_EDITOR_VIEW_TYPE);
         return;
       }
 
       renderedState = { type: 'crlData', crl: crls[0] };
       queue.post(webviewPanel, renderedState);
     } catch (err: unknown) {
-      renderedState = { type: 'crlError', message: (err as Error).message ?? String(err) };
-      queue.post(webviewPanel, renderedState);
+      await fallbackToDefaultEditor(document.uri, CRL_EDITOR_VIEW_TYPE);
     }
   }
 }

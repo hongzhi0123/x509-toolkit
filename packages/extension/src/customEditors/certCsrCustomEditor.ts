@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as https from 'https';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import * as vscode from 'vscode';
 import { X509Certificate } from '@peculiar/x509';
 import { canonicalizePemBlocks, containsPemBlock, formatIssuerChainFailure, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64, validateIssuerChain } from '@x509-toolkit/core';
@@ -259,6 +260,73 @@ async function closeSourceTabsIfHandoffCompleted(
   }
 }
 
+async function fallbackToDefaultEditor(uri: vscode.Uri, sourceViewType: string): Promise<void> {
+  await openWithViewPreservingPreview(uri, 'default', sourceViewType);
+  await closeSourceTabsIfHandoffCompleted(uri, sourceViewType, 'default');
+}
+
+function parseGitGraphPayload(uri: vscode.Uri): { filePath: string; commit?: string; repo: string } | undefined {
+  if (uri.scheme !== 'git-graph' || !uri.query) {
+    return undefined;
+  }
+
+  try {
+    const encoded = decodeURIComponent(uri.query);
+    const json = Buffer.from(encoded, 'base64').toString('utf8');
+    const parsed = JSON.parse(json) as { filePath?: unknown; commit?: unknown; repo?: unknown };
+    if (typeof parsed.filePath !== 'string' || typeof parsed.repo !== 'string') {
+      return undefined;
+    }
+    return {
+      filePath: parsed.filePath,
+      commit: typeof parsed.commit === 'string' ? parsed.commit : undefined,
+      repo: parsed.repo,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeUntitledDocument(uri: vscode.Uri, content: string): Promise<vscode.Uri> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(uri, new vscode.Position(0, 0), content);
+  await vscode.workspace.applyEdit(edit);
+  return doc.uri;
+}
+
+async function openGitGraphDiff(uri: vscode.Uri): Promise<boolean> {
+  const payload = parseGitGraphPayload(uri);
+  if (!payload) {
+    return false;
+  }
+
+  const filePath = payload.filePath.replace(/\\/g, '/');
+  const commit = payload.commit ?? 'HEAD';
+  const fileName = path.basename(filePath);
+
+  const leftContent = execFileSync('git', ['show', `${commit}:${filePath}`], {
+    cwd: payload.repo,
+    encoding: 'utf8',
+  });
+
+  const rightPath = path.join(payload.repo, ...filePath.split('/'));
+  const rightContent = fs.existsSync(rightPath) ? fs.readFileSync(rightPath, 'utf8') : '';
+
+  const leftUri = vscode.Uri.parse(`untitled:${fileName} (${commit})`);
+  const rightUri = vscode.Uri.parse(`untitled:${fileName} (Working Tree)`);
+  const leftDocUri = await writeUntitledDocument(leftUri, leftContent);
+  const rightDocUri = await writeUntitledDocument(rightUri, rightContent);
+
+  await vscode.commands.executeCommand(
+    'vscode.diff',
+    leftDocUri,
+    rightDocUri,
+    `${fileName}: ${commit} ↔ Working Tree`,
+  );
+  return true;
+}
+
 async function sendDocumentToWebview(
   queue: ReturnType<typeof createMessageQueue<ExtToWebviewMsg>>,
   panel: vscode.WebviewPanel,
@@ -346,8 +414,19 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
   ): Promise<void> {
     const enabled = readFlag();
     if (!enabled) {
-      await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
-      await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
+      await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+      return;
+    }
+
+    if (document.uri.scheme !== 'file') {
+      try {
+        const handled = await openGitGraphDiff(document.uri);
+        if (!handled) {
+          await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+        }
+      } catch {
+        await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+      }
       return;
     }
 
@@ -443,8 +522,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
           }
           break;
         case 'openAsTextEditor':
-          await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
-          await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
+          await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
           break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);
@@ -535,9 +613,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
         renderedState,
       );
     } catch (error: unknown) {
-      const message: ExtToWebviewMsg = { type: 'error', message: (error as Error).message ?? String(error) };
-      renderedState.message = message;
-      queue.post(webviewPanel, message);
+      await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
     }
   }
 }
