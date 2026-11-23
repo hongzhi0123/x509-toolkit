@@ -4,6 +4,7 @@
   import SectionCard from './SectionCard.svelte';
   import FieldRow from './FieldRow.svelte';
   import ValidityIndicator from './ValidityIndicator.svelte';
+  import OpenSslLikeTextView from './OpenSslLikeTextView.svelte';
   import ExtensionsList from './ExtensionsList.svelte';
   import HexValue from './HexValue.svelte';
   import Fingerprints from './Fingerprints.svelte';
@@ -35,6 +36,18 @@
     const cn = cert.subject.commonName ?? cert.issuer.commonName ?? 'certificate';
     const safeName = cn.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
     dispatch('convertOutput', { pem: cert.raw, suggestedName: safeName, output, destination });
+  }
+
+  function toggleOpenSslLikeMode(): void {
+    detailMode = detailMode === 'standard' ? 'openssl-like' : 'standard';
+  }
+
+  function backToStandardMode(): void {
+    detailMode = 'standard';
+  }
+
+  function openAsTextEditor(): void {
+    dispatch('openAsTextEditor');
   }
 
   function createP12(): void {
@@ -116,6 +129,7 @@
   let privKeyPemOpen = false;
   let actionsOpen = false;
   let serialMode: ValueMode = 'hex';
+  let detailMode: 'standard' | 'openssl-like' = 'standard';
 
   function toggleActions() { actionsOpen = !actionsOpen; }
   function closeActions() { actionsOpen = false; }
@@ -156,11 +170,19 @@
           {#if cert.isSelfSigned}
             <span class="meta-badge self">Self-Signed</span>
           {/if}
+          <span class="meta-validity">
+            <ValidityIndicator validity={cert.validity} />
+          </span>
         </div>
       </div>
     </div>
     <div class="cert-header-right">
-      <ValidityIndicator validity={cert.validity} />
+      <button class="header-action-btn" on:click={toggleOpenSslLikeMode} title={detailMode === 'standard' ? 'Show OpenSSL-like text details' : 'Back to standard certificate details'}>
+        {detailMode === 'standard' ? 'OpenSSL-like View' : 'Standard View'}
+      </button>
+      <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+        Open with Text Editor
+      </button>
       <div class="actions-menu" use:clickOutside={closeActions}>
         <button class="actions-trigger" on:click={toggleActions} aria-haspopup="true" aria-expanded={actionsOpen}>
           Actions <span class="actions-chevron" class:open={actionsOpen}>▾</span>
@@ -235,14 +257,6 @@
             >
               <span class="actions-item-icon">🔄</span> Open Conversion Hub…
             </button>
-            <button
-              class="actions-item"
-              role="menuitem"
-              title="Reopen this file in the text editor"
-              on:click={() => { dispatch('openAsTextEditor'); closeActions(); }}
-            >
-              <span class="actions-item-icon">📝</span> Open with Text Editor
-            </button>
           </div>
         {/if}
       </div>
@@ -294,6 +308,7 @@
 
   <!-- ── Sections ── -->
   <div class="sections">
+    {#if detailMode === 'standard'}
 
     <!-- Subject -->
     <SectionCard title="Subject" icon="👤">
@@ -448,6 +463,13 @@
         <div class="key-import-error">⚠️ {importKeyError}</div>
       </SectionCard>
     {/if}
+    {:else}
+      <OpenSslLikeTextView
+        {cert}
+        on:copy={(e) => copy(e.detail)}
+        on:back={backToStandardMode}
+      />
+    {/if}
 
   </div>
 </div>
@@ -483,6 +505,27 @@
     align-items: flex-start;
     gap: 0.6rem;
     flex-shrink: 0;
+  }
+
+  .header-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.28rem 0.7rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s;
+  }
+
+  .header-action-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+    border-color: var(--vscode-focusBorder, rgba(255,255,255,0.3));
   }
 
   /* ── Actions dropdown ── */
@@ -576,6 +619,22 @@
   }
 
   .cert-badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+  .meta-validity {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .meta-validity :global(.vi) {
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.67rem;
+    line-height: 1.2;
+  }
+
+  .meta-validity :global(.vi-icon) {
+    font-size: 0.75rem;
+  }
 
   .meta-badge {
     display: inline-block;

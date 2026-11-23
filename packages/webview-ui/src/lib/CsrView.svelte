@@ -44,6 +44,9 @@
         </div>
       </div>
       <div class="csr-header-right">
+        <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+          Open with Text Editor
+        </button>
         <button class="export-btn sign-btn" on:click={handleSignCsr}>
           ✍ Sign this CSR…
         </button>
@@ -152,7 +155,6 @@
         <div class="pem-toolbar">
           <button class="copy-btn" on:click={() => copyText(csr.raw)} title="Copy PEM">⧉ Copy PEM</button>
           <button class="copy-btn" on:click={saveCsr} title="Save CSR only">⤓ Save CSR only…</button>
-          <button class="copy-btn" on:click={openAsTextEditor} title="Open as text editor">📝 Open with Text Editor…</button>
         </div>
         <pre class="raw-pem">{csr.raw}</pre>
       </div>
@@ -250,6 +252,24 @@
     align-items: flex-start;
     gap: 0.6rem;
     flex-shrink: 0;
+  }
+
+  .header-action-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.7rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+  }
+
+  .header-action-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
   }
 
   /* ── Export-style buttons ── */

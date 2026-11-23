@@ -207,6 +207,10 @@
     </div>
 
   {:else if state === 'ready' && keyData}
+    <div class="viewer-toolbar">
+      <button class="action-btn" on:click={openAsTextEditor}>Open with Text Editor…</button>
+    </div>
+
     <!-- Overview -->
     <SectionCard title="Key Overview" icon="🔑">
       <FieldRow label="Kind" value={keyData.kind === 'private' ? 'Private Key' : 'Public Key'} />
@@ -304,10 +308,6 @@
         </select>
         <button class="action-btn" on:click={exportPublicKey}>Save Public Key…</button>
       </div>
-      <div class="export-row">
-        <span class="export-label">Editor</span>
-        <button class="action-btn" on:click={openAsTextEditor}>Open with Text Editor…</button>
-      </div>
     </SectionCard>
   {/if}
 </div>
@@ -319,6 +319,12 @@
     flex-direction: column;
     gap: 0.5rem;
     max-width: 900px;
+  }
+
+  .viewer-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 0.7rem;
   }
 
   .empty-state,
