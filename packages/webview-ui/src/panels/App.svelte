@@ -9,6 +9,8 @@
 
   const vscode = acquireVsCodeApi();
 
+  export let showTextEditorButton = false;
+
   type AppState = 'idle' | 'loading' | 'ready' | 'error' | 'csr';
 
   let state: AppState = 'idle';
@@ -280,6 +282,7 @@
   {:else if state === 'csr' && csrData}
     <CsrView
       csr={csrData}
+      {showTextEditorButton}
       on:copy={handleCopyRequest}
       on:signCsr={handleSignCsr}
       on:saveCsr={handleSaveCsr}
@@ -378,6 +381,7 @@
         certIndex={activeIndex}
         importedPrivateKey={importedKeys.get(activeIndex)}
         importKeyError={importKeyErrors.get(activeIndex)}
+        {showTextEditorButton}
         {loadingUrls}
         topOffset={stickyHeaderHeight}
         on:copy={handleCopyRequest}

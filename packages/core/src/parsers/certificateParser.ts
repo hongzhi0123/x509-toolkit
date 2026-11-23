@@ -180,9 +180,26 @@ async function buildPublicKeyInfo(cert: X509Certificate): Promise<PublicKeyInfo>
 }
 
 function sigAlgName(cert: X509Certificate): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const oid: string = (cert.signatureAlgorithm as any)?.algorithm?.value ?? '';
-  return SIG_ALG_NAMES[oid] ?? (oid || 'Unknown');
+  // @peculiar/x509 exposes this as a WebCrypto-style algorithm object
+  // ({ name: 'RSASSA-PKCS1-v1_5', hash: { name: 'SHA-256' } }), while
+  // older versions exposed the ASN.1 algorithm OID under algorithm.value.
+  const algorithm = cert.signatureAlgorithm as unknown as {
+    algorithm?: { value?: string };
+    name?: string;
+    hash?: { name?: string };
+  };
+  const oid = algorithm.algorithm?.value ?? '';
+  if (SIG_ALG_NAMES[oid]) return SIG_ALG_NAMES[oid];
+
+  const hash = algorithm.hash?.name?.toUpperCase();
+  const name = algorithm.name?.toUpperCase();
+  if (name === 'RSASSA-PKCS1-V1_5' && hash) return `${hash} with RSA`;
+  if (name === 'RSASSA-PSS') return hash ? `${hash} with RSA-PSS` : 'RSASSA-PSS';
+  if (name === 'ECDSA' && hash) return `ECDSA with ${hash}`;
+  if (name === 'ED25519') return 'Ed25519';
+  if (name === 'ED448') return 'Ed448';
+
+  return oid || algorithm.name || 'Unknown';
 }
 
 // ------------------------------------------------------------------

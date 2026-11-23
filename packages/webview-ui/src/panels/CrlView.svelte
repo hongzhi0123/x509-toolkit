@@ -11,6 +11,7 @@
   let state: State = 'idle';
   let crl: CrlData | null = null;
   let errorMessage = '';
+  export let showTextEditorButton = false;
 
   // Pagination for the revoked-entries list
   const PAGE_SIZE = 100;
@@ -127,9 +128,11 @@
         </div>
       </div>
       <div class="crl-header-right">
-        <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
-          Open with Text Editor
-        </button>
+        {#if showTextEditorButton}
+          <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+            Open with Text Editor
+          </button>
+        {/if}
         <div class="revoked-count">
           <span class="count-number">{crl.revokedCertificates.length.toLocaleString()}</span>
           <span class="count-label">revoked cert{crl.revokedCertificates.length !== 1 ? 's' : ''}</span>

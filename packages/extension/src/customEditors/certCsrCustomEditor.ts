@@ -455,6 +455,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
     };
     webviewPanel.webview.html = buildHtml(webviewPanel.webview, this.context.extensionUri, {
       title: 'X.509 Certificate / CSR Viewer',
+      dataView: 'customEditor',
     });
 
     const queue = createMessageQueue<ExtToWebviewMsg>();

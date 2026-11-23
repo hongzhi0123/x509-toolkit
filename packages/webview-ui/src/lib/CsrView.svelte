@@ -6,6 +6,7 @@
   import ExtensionsList from './ExtensionsList.svelte';
 
   export let csr: CsrData;
+  export let showTextEditorButton = false;
 
   const dispatch = createEventDispatcher<{ copy: string; signCsr: void; saveCsr: void; saveKey: void; saveBoth: void; openAsTextEditor: void }>();
 
@@ -44,9 +45,11 @@
         </div>
       </div>
       <div class="csr-header-right">
-        <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
-          Open with Text Editor
-        </button>
+        {#if showTextEditorButton}
+          <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+            Open with Text Editor
+          </button>
+        {/if}
         <button class="export-btn sign-btn" on:click={handleSignCsr}>
           ✍ Sign this CSR…
         </button>

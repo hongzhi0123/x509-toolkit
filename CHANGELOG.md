@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 ---
 
+## [0.7.0] - 2026-11-23
+
+### Added
+- OpenSSL-like Text Viewer
+
+### Fixed
+- Unknown Signature Algorithm
+
 ## [0.6.1] - 2026-11-04
 
 ### Added

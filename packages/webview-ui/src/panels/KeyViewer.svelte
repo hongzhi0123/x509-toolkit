@@ -15,6 +15,7 @@
 
   // Optional test hooks for deterministic panel-state initialization.
   export let initialKeyData: StandaloneKeyData | null = null;
+  export let showTextEditorButton = false;
   export let initialPassphraseRequest: {
     requestId: string;
     fileName: string;
@@ -207,9 +208,11 @@
     </div>
 
   {:else if state === 'ready' && keyData}
-    <div class="viewer-toolbar">
-      <button class="action-btn" on:click={openAsTextEditor}>Open with Text Editor…</button>
-    </div>
+    {#if showTextEditorButton}
+      <div class="viewer-toolbar">
+        <button class="action-btn" on:click={openAsTextEditor}>Open with Text Editor…</button>
+      </div>
+    {/if}
 
     <!-- Overview -->
     <SectionCard title="Key Overview" icon="🔑">

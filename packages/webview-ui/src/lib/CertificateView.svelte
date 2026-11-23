@@ -19,6 +19,7 @@
   export let certIndex: number = 0;
   export let importedPrivateKey: PrivateKeyInfo | undefined = undefined;
   export let importKeyError: string | undefined = undefined;
+  export let showTextEditorButton = false;
 
   const dispatch = createEventDispatcher<{ copy: string; loadCaIssuer: string; export: { pem: string; suggestedName: string; format: 'pem' | 'der' }; convertOutput: { pem: string; suggestedName: string; output: 'pem-wrapped' | 'pem-single-line' | 'base64'; destination: 'copy' | 'save' }; exportPrivateKey: { keyPem: string; suggestedName: string }; createP12: { certPems: string[]; suggestedName: string; keyPem?: string }; importPrivateKey: { certIndex: number; spkiPem: string }; openConvertHub: void; openAsTextEditor: void }>();
 
@@ -180,9 +181,11 @@
       <button class="header-action-btn" on:click={toggleOpenSslLikeMode} title={detailMode === 'standard' ? 'Show OpenSSL-like text details' : 'Back to standard certificate details'}>
         {detailMode === 'standard' ? 'OpenSSL-like View' : 'Standard View'}
       </button>
-      <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
-        Open with Text Editor
-      </button>
+      {#if showTextEditorButton}
+        <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+          Open with Text Editor
+        </button>
+      {/if}
       <div class="actions-menu" use:clickOutside={closeActions}>
         <button class="actions-trigger" on:click={toggleActions} aria-haspopup="true" aria-expanded={actionsOpen}>
           Actions <span class="actions-chevron" class:open={actionsOpen}>▾</span>

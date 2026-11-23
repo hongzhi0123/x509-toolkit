@@ -143,7 +143,7 @@ class KeyCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
     };
     webviewPanel.webview.html = buildHtml(webviewPanel.webview, this.context.extensionUri, {
       title: 'X.509 Key Viewer',
-      dataView: 'keyViewer',
+      dataView: 'keyViewerCustomEditor',
     });
 
     const queue = createMessageQueue<ExtToKeyViewerMsg>();
@@ -414,7 +414,7 @@ class CrlCustomEditorProvider implements vscode.CustomReadonlyEditorProvider {
     };
     webviewPanel.webview.html = buildHtml(webviewPanel.webview, this.context.extensionUri, {
       title: 'X.509 CRL Viewer',
-      dataView: 'crlViewer',
+      dataView: 'crlViewerCustomEditor',
     });
 
     const queue = createMessageQueue<ExtToCrlViewerMsg>();
