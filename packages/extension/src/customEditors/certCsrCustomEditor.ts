@@ -1,7 +1,11 @@
 import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import * as vscode from 'vscode';
-import { canonicalizePemBlocks, containsPemBlock, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64 } from '@x509-toolkit/core';
+import { X509Certificate } from '@peculiar/x509';
+import { canonicalizePemBlocks, containsPemBlock, formatIssuerChainFailure, looksLikeKeyFile, parseCertificate, parseCsr, parseP12, parsePEMChain, toOneLinePem, toRawBase64, validateIssuerChain } from '@x509-toolkit/core';
 import type { ExtToWebviewMsg, WebviewToExtMsg } from '@x509-toolkit/core';
 import { buildHtml, createMessageQueue } from '../utils/webviewPanelUtils';
 import { requestPassphrase, resolvePassphraseRequest } from '../utils/requestBridgeUtils';
@@ -116,6 +120,62 @@ async function openWithView(uri: vscode.Uri, viewType: string): Promise<void> {
   await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
 }
 
+function downloadBytesFromUrl(url: string, redirectsLeft = 3): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error('Invalid URL'));
+      return;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      reject(new Error('Only http:// and https:// URLs are supported'));
+      return;
+    }
+
+    const requester = parsed.protocol === 'https:' ? https : http;
+    const req = requester.get(url, { timeout: 10_000 }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (redirectsLeft <= 0) {
+          reject(new Error('Too many redirects'));
+          return;
+        }
+        const next = new URL(res.headers.location, url).toString();
+        resolve(downloadBytesFromUrl(next, redirectsLeft - 1));
+        return;
+      }
+
+      if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        return;
+      }
+
+      const MAX_BYTES = 512 * 1024;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BYTES) {
+          req.destroy();
+          reject(new Error('Response too large (>512 KB)'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
+  });
+}
+
 function findSourceCustomTab(uri: vscode.Uri, viewType: string): vscode.Tab | undefined {
   return vscode.window.tabGroups.all
     .flatMap((group) => group.tabs)
@@ -198,6 +258,73 @@ async function closeSourceTabsIfHandoffCompleted(
   if (targetReady) {
     await closeSourceCustomTabs(uri, sourceViewType);
   }
+}
+
+async function fallbackToDefaultEditor(uri: vscode.Uri, sourceViewType: string): Promise<void> {
+  await openWithViewPreservingPreview(uri, 'default', sourceViewType);
+  await closeSourceTabsIfHandoffCompleted(uri, sourceViewType, 'default');
+}
+
+function parseGitGraphPayload(uri: vscode.Uri): { filePath: string; commit?: string; repo: string } | undefined {
+  if (uri.scheme !== 'git-graph' || !uri.query) {
+    return undefined;
+  }
+
+  try {
+    const encoded = decodeURIComponent(uri.query);
+    const json = Buffer.from(encoded, 'base64').toString('utf8');
+    const parsed = JSON.parse(json) as { filePath?: unknown; commit?: unknown; repo?: unknown };
+    if (typeof parsed.filePath !== 'string' || typeof parsed.repo !== 'string') {
+      return undefined;
+    }
+    return {
+      filePath: parsed.filePath,
+      commit: typeof parsed.commit === 'string' ? parsed.commit : undefined,
+      repo: parsed.repo,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeUntitledDocument(uri: vscode.Uri, content: string): Promise<vscode.Uri> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(uri, new vscode.Position(0, 0), content);
+  await vscode.workspace.applyEdit(edit);
+  return doc.uri;
+}
+
+async function openGitGraphDiff(uri: vscode.Uri): Promise<boolean> {
+  const payload = parseGitGraphPayload(uri);
+  if (!payload) {
+    return false;
+  }
+
+  const filePath = payload.filePath.replace(/\\/g, '/');
+  const commit = payload.commit ?? 'HEAD';
+  const fileName = path.basename(filePath);
+
+  const leftContent = execFileSync('git', ['show', `${commit}:${filePath}`], {
+    cwd: payload.repo,
+    encoding: 'utf8',
+  });
+
+  const rightPath = path.join(payload.repo, ...filePath.split('/'));
+  const rightContent = fs.existsSync(rightPath) ? fs.readFileSync(rightPath, 'utf8') : '';
+
+  const leftUri = vscode.Uri.parse(`untitled:${fileName} (${commit})`);
+  const rightUri = vscode.Uri.parse(`untitled:${fileName} (Working Tree)`);
+  const leftDocUri = await writeUntitledDocument(leftUri, leftContent);
+  const rightDocUri = await writeUntitledDocument(rightUri, rightContent);
+
+  await vscode.commands.executeCommand(
+    'vscode.diff',
+    leftDocUri,
+    rightDocUri,
+    `${fileName}: ${commit} ↔ Working Tree`,
+  );
+  return true;
 }
 
 async function sendDocumentToWebview(
@@ -287,8 +414,19 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
   ): Promise<void> {
     const enabled = readFlag();
     if (!enabled) {
-      await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
-      await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
+      await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+      return;
+    }
+
+    if (document.uri.scheme !== 'file') {
+      try {
+        const handled = await openGitGraphDiff(document.uri);
+        if (!handled) {
+          await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+        }
+      } catch {
+        await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
+      }
       return;
     }
 
@@ -317,6 +455,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
     };
     webviewPanel.webview.html = buildHtml(webviewPanel.webview, this.context.extensionUri, {
       title: 'X.509 Certificate / CSR Viewer',
+      dataView: 'customEditor',
     });
 
     const queue = createMessageQueue<ExtToWebviewMsg>();
@@ -384,13 +523,74 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
           }
           break;
         case 'openAsTextEditor':
-          await openWithViewPreservingPreview(document.uri, 'default', EDITOR_VIEW_TYPE);
-          await closeSourceTabsIfHandoffCompleted(document.uri, EDITOR_VIEW_TYPE, 'default');
+          await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
           break;
         case 'copyToClipboard':
           void vscode.env.clipboard.writeText(msg.value);
           void vscode.window.showInformationMessage('Copied to clipboard.');
           break;
+        case 'downloadCaIssuer':
+          downloadBytesFromUrl(msg.url)
+            .then((buf) => parseCertificate(buf))
+            .then((cert) => {
+              const reply: ExtToWebviewMsg = { type: 'caIssuerCert', cert, url: msg.url };
+              queue.post(webviewPanel, reply);
+            })
+            .catch((err: unknown) => {
+              const reply: ExtToWebviewMsg = {
+                type: 'caIssuerError',
+                url: msg.url,
+                message: (err as Error).message ?? String(err),
+              };
+              queue.post(webviewPanel, reply);
+            });
+          break;
+        case 'openCaCertFile': {
+          const uris = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            openLabel: 'Open CA Certificate',
+            title: 'Open CA / Issuer Certificate',
+            filters: {
+              'Certificate Files': ['pem', 'crt', 'cer', 'der'],
+              'All Files': ['*'],
+            },
+          });
+          if (!uris?.[0]) {
+            break;
+          }
+
+          const filePath = uris[0].fsPath;
+          const fileUrl = `file://${filePath.replace(/\\/g, '/')}`;
+          const sendFileErr = (message: string): void => {
+            queue.post(webviewPanel, { type: 'caIssuerError', url: fileUrl, message });
+          };
+
+          try {
+            const buf = fs.readFileSync(filePath);
+            const asText = buf.toString('utf8').trim();
+            const certs = asText.includes('-----BEGIN CERTIFICATE-----')
+              ? await parsePEMChain(asText)
+              : [await parseCertificate(buf)];
+
+            const topX509 = new X509Certificate(msg.topCertPem);
+            const failure = validateIssuerChain(
+              topX509,
+              certs.map((cert) => new X509Certificate(cert.raw)),
+            );
+            if (failure) {
+              sendFileErr(formatIssuerChainFailure(failure));
+              break;
+            }
+
+            certs.forEach((cert, idx) => {
+              const url = certs.length > 1 ? `${fileUrl}#${idx}` : fileUrl;
+              queue.post(webviewPanel, { type: 'caIssuerCert', cert, url });
+            });
+          } catch (err: unknown) {
+            sendFileErr((err as Error).message ?? String(err));
+          }
+          break;
+        }
         case 'passphraseResponse':
           resolvePassphraseRequest(msg.requestId, msg.passphrase);
           break;
@@ -414,9 +614,7 @@ class CertCsrCustomEditorProvider implements vscode.CustomReadonlyEditorProvider
         renderedState,
       );
     } catch (error: unknown) {
-      const message: ExtToWebviewMsg = { type: 'error', message: (error as Error).message ?? String(error) };
-      renderedState.message = message;
-      queue.post(webviewPanel, message);
+      await fallbackToDefaultEditor(document.uri, EDITOR_VIEW_TYPE);
     }
   }
 }

@@ -11,6 +11,7 @@
   let state: State = 'idle';
   let crl: CrlData | null = null;
   let errorMessage = '';
+  export let showTextEditorButton = false;
 
   // Pagination for the revoked-entries list
   const PAGE_SIZE = 100;
@@ -127,6 +128,11 @@
         </div>
       </div>
       <div class="crl-header-right">
+        {#if showTextEditorButton}
+          <button class="header-action-btn" on:click={openAsTextEditor} title="Reopen this file in the text editor">
+            Open with Text Editor
+          </button>
+        {/if}
         <div class="revoked-count">
           <span class="count-number">{crl.revokedCertificates.length.toLocaleString()}</span>
           <span class="count-label">revoked cert{crl.revokedCertificates.length !== 1 ? 's' : ''}</span>
@@ -269,7 +275,6 @@
       <div class="raw-pem-container">
         <div class="raw-pem-actions">
           <button class="export-btn" on:click={() => copyText(crl.raw)}>⎘ Copy PEM</button>
-          <button class="export-btn" on:click={openAsTextEditor}>📝 Open with Text Editor…</button>
         </div>
         <pre class="raw-pem">{crl.raw}</pre>
       </div>
@@ -323,6 +328,21 @@
   .format-tag { background: #2a2a1a; color: #c8b76a; }
 
   .crl-header-right { flex-shrink: 0; text-align: right; }
+  .header-action-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.7rem;
+    margin-right: 0.6rem;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.07));
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: var(--vscode-font-family);
+    white-space: nowrap;
+  }
+  .header-action-btn:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12)); }
   .revoked-count { display: flex; flex-direction: column; align-items: flex-end; }
   .count-number { font-size: 1.8rem; font-weight: 700; color: var(--vscode-foreground); line-height: 1; }
   .count-label { font-size: 0.75rem; color: var(--vscode-descriptionForeground); }

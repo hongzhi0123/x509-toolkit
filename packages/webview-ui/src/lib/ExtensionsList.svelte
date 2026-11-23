@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { CertExtension } from '../types';
+  import { formatHexValue, getAvailableFormats, modeBadgeText, nextValueMode } from './valueFormat';
+  import type { ValueMode } from './valueFormat';
 
   export let extensions: CertExtension[];
   export let loadingUrls: Set<string> = new Set();
@@ -9,6 +11,7 @@
 
   let expanded: Set<number> = new Set();
   let rawExpanded: Set<number> = new Set();
+  let modeByIndex: Record<number, ValueMode> = {};
 
   function toggle(i: number): void {
     if (expanded.has(i)) { expanded.delete(i); }
@@ -24,6 +27,88 @@
 
   function hasDecoded(ext: CertExtension): boolean {
     return !!ext.value && ext.value !== '(see raw hex)' && ext.value !== '(parse error — see raw hex)';
+  }
+
+  function isSki(ext: CertExtension): boolean {
+    return ext.oid === '2.5.29.14' || ext.name === 'Subject Key Identifier';
+  }
+
+  function isAki(ext: CertExtension): boolean {
+    return ext.oid === '2.5.29.35' || ext.name === 'Authority Key Identifier';
+  }
+
+  function getAkiKeyId(ext: CertExtension): string | undefined {
+    if (!ext.value || !isAki(ext)) return undefined;
+    const keyIdLine = ext.value.split('\n').find((line) => line.startsWith('Key ID:'));
+    if (!keyIdLine) return undefined;
+    return keyIdLine.slice('Key ID:'.length).trim();
+  }
+
+  function getFormats(ext: CertExtension): ValueMode[] {
+    if (isSki(ext)) return getAvailableFormats(ext.value ?? '');
+    const akiKeyId = getAkiKeyId(ext);
+    if (akiKeyId) return getAvailableFormats(akiKeyId);
+    return [];
+  }
+
+  function getMode(i: number, ext: CertExtension): ValueMode {
+    const formats = getFormats(ext);
+    const current = modeByIndex[i] ?? 'hex';
+    if (formats.includes(current)) return current;
+    return formats[0] ?? 'hex';
+  }
+
+  function cycleMode(i: number, ext: CertExtension): void {
+    const formats = getFormats(ext);
+    if (formats.length < 2) return;
+    const current = getMode(i, ext);
+    modeByIndex = { ...modeByIndex, [i]: nextValueMode(current, formats) };
+  }
+
+  function formatSkiValue(ext: CertExtension, mode: ValueMode): string {
+    const formatted = formatHexValue(ext.value ?? '', mode);
+    return formatted ?? (ext.value ?? '');
+  }
+
+  function formatAkiValue(ext: CertExtension, mode: ValueMode): string {
+    if (!ext.value) return '';
+    return ext.value
+      .split('\n')
+      .map((line) => {
+        if (!line.startsWith('Key ID:')) return line;
+        const rawKeyId = line.slice('Key ID:'.length).trim();
+        const formatted = formatHexValue(rawKeyId, mode);
+        return `Key ID: ${formatted ?? rawKeyId}`;
+      })
+      .join('\n');
+  }
+
+  function displayExtensionValue(ext: CertExtension, mode: ValueMode): string {
+    if (!ext.value) return '';
+
+    if (isSki(ext)) return formatSkiValue(ext, mode);
+
+    if (isAki(ext)) return formatAkiValue(ext, mode);
+
+    return ext.value;
+  }
+
+  function toggleLabel(ext: CertExtension): string {
+    if (isSki(ext)) return 'Toggle Subject Key Identifier format (hex/decimal/base64)';
+    return 'Toggle Authority Key Identifier format (hex/decimal/base64)';
+  }
+
+  function toggleAria(ext: CertExtension): string {
+    if (isSki(ext)) return 'Toggle Subject Key Identifier format';
+    return 'Toggle Authority Key Identifier format';
+  }
+
+  function extensionModeBadge(i: number, ext: CertExtension, _modeRef?: ValueMode): string {
+    return modeBadgeText(getMode(i, ext));
+  }
+
+  function displayExtValueAt(i: number, ext: CertExtension, _modeRef?: ValueMode): string {
+    return displayExtensionValue(ext, getMode(i, ext));
   }
 </script>
 
@@ -50,9 +135,19 @@
             <div class="ext-field">
               <div class="ext-field-hdr">
                 <span class="ext-flbl">Value</span>
-                <button class="copy-btn" on:click={() => dispatch('copy', ext.value)}>⧉ Copy</button>
+                <div class="ext-actions">
+                  {#if getFormats(ext).length > 1}
+                    <button
+                      class="copy-btn ext-toggle-btn"
+                      on:click={() => cycleMode(i, ext)}
+                      title={toggleLabel(ext)}
+                      aria-label={toggleAria(ext)}
+                    >{extensionModeBadge(i, ext, modeByIndex[i])}</button>
+                  {/if}
+                  <button class="copy-btn" on:click={() => dispatch('copy', displayExtValueAt(i, ext, modeByIndex[i]))}>⧉</button>
+                </div>
               </div>
-              <pre class="ext-val">{ext.value}</pre>
+              <pre class="ext-val">{displayExtValueAt(i, ext, modeByIndex[i])}</pre>
             </div>
           {/if}
 
@@ -87,7 +182,7 @@
               {#if rawExpanded.has(i)}
                 <div class="ext-field-hdr">
                   <span></span>
-                  <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉ Copy</button>
+                  <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉</button>
                 </div>
                 <pre class="ext-raw">{ext.raw}</pre>
               {/if}
@@ -96,7 +191,7 @@
             <div class="ext-field">
               <div class="ext-field-hdr">
                 <span class="ext-flbl">Raw (DER hex)</span>
-                <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉ Copy</button>
+                <button class="copy-btn" on:click={() => dispatch('copy', ext.raw)}>⧉</button>
               </div>
               <pre class="ext-raw">{ext.raw}</pre>
             </div>
@@ -220,6 +315,17 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
+  }
+
+  .ext-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .ext-toggle-btn {
+    padding-left: 0.42rem;
+    padding-right: 0.42rem;
   }
 
   .ext-flbl {

@@ -180,6 +180,42 @@ describe('App.svelte — ready state', () => {
     });
     await waitFor(() => expect(getByTestId('viewer-chain-nav')).toBeInTheDocument());
   });
+
+  it('toggles to OpenSSL-like details in the same panel and back to standard details', async () => {
+    const { getByRole, getByTestId, queryByText, getByText } = await renderMounted();
+    sendMessage({ type: 'certificate', chain: [sampleCert()], activeIndex: 0 });
+    await waitFor(() => expect(getByTestId('viewer-state-ready')).toBeInTheDocument());
+
+    const toggleBtn = getByRole('button', { name: 'OpenSSL-like Text' });
+    await fireEvent.click(toggleBtn);
+
+    await waitFor(() => expect(getByTestId('openssl-like-view')).toBeInTheDocument());
+    expect(queryByText('Subject')).not.toBeInTheDocument();
+
+    await fireEvent.click(getByText('Back to Standard View'));
+
+    await waitFor(() => expect(queryByText('Subject')).toBeInTheDocument());
+  });
+
+  it('switching certificate tab resets details to standard view', async () => {
+    const { getByRole, getByTestId, getByText, queryByTestId } = await renderMounted();
+    sendMessage({
+      type: 'certificate',
+      chain: [
+        sampleCert({ subject: { raw: 'CN=leaf', commonName: 'leaf' } }),
+        sampleCert({ subject: { raw: 'CN=root', commonName: 'root' }, isCA: true }),
+      ],
+      activeIndex: 0,
+    });
+    await waitFor(() => expect(getByTestId('viewer-chain-nav')).toBeInTheDocument());
+
+    await fireEvent.click(getByRole('button', { name: 'OpenSSL-like Text' }));
+    await waitFor(() => expect(getByTestId('openssl-like-view')).toBeInTheDocument());
+
+    await fireEvent.click(getByRole('button', { name: /root/ }));
+    await waitFor(() => expect(queryByTestId('openssl-like-view')).not.toBeInTheDocument());
+    expect(getByText('Subject')).toBeInTheDocument();
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
